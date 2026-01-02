@@ -4,10 +4,10 @@ RUN apk --no-cache add git
 
 WORKDIR /smartbed-mqtt
 
-# Copy dependency manifests first (better caching + includes lockfile)
-COPY package.json yarn.lock ./
+# Copy dependency manifests first
+COPY package.json ./
 
-# Install deps
+# Install deps (deterministic if yarn.lock exists)
 RUN yarn install
 
 # Copy build sources
@@ -17,6 +17,12 @@ COPY tsconfig.json ./
 
 # Build
 RUN yarn build:ci
+
+
+# =========================
+# Runtime stage
+# =========================
+FROM node:18-alpine
 
 # Add env
 ENV LANG C.UTF-8
@@ -32,17 +38,19 @@ RUN apk add --no-cache bash curl jq && \
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 WORKDIR /smartbed-mqtt
+
 COPY run.sh /smartbed-mqtt/
-RUN chmod a+x run.sh
+RUN chmod a+x /smartbed-mqtt/run.sh
 
-COPY --from=0 /smartbed-mqtt/node_modules /smartbed-mqtt/node_modules
-COPY --from=0 /smartbed-mqtt/dist/tsc/ /smartbed-mqtt/
+# Copy build outputs from build stage
+COPY --from=build /smartbed-mqtt/node_modules /smartbed-mqtt/node_modules
+COPY --from=build /smartbed-mqtt/dist/tsc/ /smartbed-mqtt/
 
-ENTRYPOINT [ "/smartbed-mqtt/run.sh" ]
-#ENTRYPOINT [ "node", "index.js" ]
+ENTRYPOINT ["/smartbed-mqtt/run.sh"]
+
 LABEL \
-    io.hass.name="Smartbed Integration via MQTT" \
-    io.hass.description="Home Assistant Community Add-on for Smartbeds" \
-    io.hass.type="addon" \
-    io.hass.version="1.1.22" \
-    maintainer="Richard Hopton <richard@thehoptons.com>"
+  io.hass.name="Smartbed Integration via MQTT" \
+  io.hass.description="Home Assistant Community Add-on for Smartbeds" \
+  io.hass.type="addon" \
+  io.hass.version="1.1.22" \
+  maintainer="Richard Hopton <richard@thehoptons.com>"
