@@ -8,7 +8,7 @@ WORKDIR /smartbed-mqtt
 COPY package.json yarn.lock ./
 
 # Install deps
-RUN yarn install --frozen-lockfile
+RUN yarn install
 
 # Copy build sources
 COPY src ./src
