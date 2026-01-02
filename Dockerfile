@@ -3,7 +3,6 @@ FROM node:18-alpine
 RUN apk --no-cache add git
 
 COPY package.json /smartbed-mqtt/
-COPY yarn.lock /smartbed-mqtt/
 WORKDIR /smartbed-mqtt
 
 RUN yarn install
