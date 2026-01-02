@@ -1,19 +1,22 @@
-FROM node:18-alpine
+FROM node:18-alpine AS build
 
 RUN apk --no-cache add git
 
-COPY package.json /smartbed-mqtt/
 WORKDIR /smartbed-mqtt
 
-RUN yarn install
+# Copy dependency manifests first (better caching + includes lockfile)
+COPY package.json yarn.lock ./
 
-COPY src /smartbed-mqtt/src/
-COPY tsconfig.build.json /smartbed-mqtt/
-COPY tsconfig.json /smartbed-mqtt/
+# Install deps
+RUN yarn install --frozen-lockfile
 
+# Copy build sources
+COPY src ./src
+COPY tsconfig.build.json ./
+COPY tsconfig.json ./
+
+# Build
 RUN yarn build:ci
-
-FROM node:18-alpine
 
 # Add env
 ENV LANG C.UTF-8
