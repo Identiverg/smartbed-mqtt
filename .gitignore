@@ -14,3 +14,4 @@ autotest_output/
 
 yarn-error.log
 thumbs.db
+.claude

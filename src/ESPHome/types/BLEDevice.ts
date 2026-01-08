@@ -6,9 +6,22 @@ import { BLEAdvertisement } from './BLEAdvertisement';
 import { BLEDeviceInfo } from './BLEDeviceInfo';
 import { IBLEDevice } from './IBLEDevice';
 
+const BT_BASE_UUID_SUFFIX = '0000-1000-8000-00805f9b34fb';
+
+const normalizeUuid = (uuid: string) => {
+  if (!uuid) return '';
+  let normalized = uuid.toLowerCase();
+  if (normalized.startsWith('0x')) normalized = normalized.slice(2);
+  if (!normalized.includes('-') && normalized.length <= 8) {
+    return `${normalized.padStart(8, '0')}-${BT_BASE_UUID_SUFFIX}`;
+  }
+  return normalized;
+};
+
 export class BLEDevice implements IBLEDevice {
   private connected = false;
   private paired = false;
+  private connecting?: Promise<void>;
 
   private servicesList?: BluetoothGATTService[];
   private serviceCache: Dictionary<BluetoothGATTService | null> = {};
@@ -29,8 +42,12 @@ export class BLEDevice implements IBLEDevice {
   constructor(public name: string, public advertisement: BLEAdvertisement, private connection: Connection) {
     this.mac = this.address.toString(16).padStart(12, '0');
     this.connection.on('message.BluetoothDeviceConnectionResponse', ({ address, connected }) => {
-      if (this.address !== address || this.connected === connected) return;
-      void this.connect();
+      if (this.address !== address) return;
+      this.connected = connected;
+      if (!connected) {
+        this.servicesList = undefined;
+        this.serviceCache = {};
+      }
     });
   }
 
@@ -40,10 +57,19 @@ export class BLEDevice implements IBLEDevice {
   };
 
   connect = async () => {
+    if (this.connected) return;
+    if (this.connecting) return this.connecting;
     const { addressType } = this.advertisement;
-    await this.connection.connectBluetoothDeviceService(this.address, addressType);
-    this.connected = true;
-    if (this.paired) await this.pair();
+    this.connecting = (async () => {
+      await this.connection.connectBluetoothDeviceService(this.address, addressType);
+      this.connected = true;
+      if (this.paired) await this.pair();
+    })();
+    try {
+      await this.connecting;
+    } finally {
+      this.connecting = undefined;
+    }
   };
 
   disconnect = async () => {
@@ -57,12 +83,12 @@ export class BLEDevice implements IBLEDevice {
 
   getServices = async () => {
     if (!this.servicesList) {
-      const maxAttempts = 2;
-      const timeoutSeconds = 15;
+      const maxAttempts = 3;
+      const timeoutSeconds = 20;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           if (!this.connected) await this.connect();
-          await wait(750);
+          await wait(1000);
           const { servicesList } = await this.connection.listBluetoothGATTServicesService(
             this.address,
             timeoutSeconds
@@ -83,16 +109,21 @@ export class BLEDevice implements IBLEDevice {
   };
 
   getCharacteristic = async (serviceUuid: string, characteristicUuid: string, writeLogs = true) => {
-    const service = await this.getService(serviceUuid);
+    const normalizedServiceUuid = normalizeUuid(serviceUuid);
+    const normalizedCharacteristicUuid = normalizeUuid(characteristicUuid);
+    const service = await this.getService(normalizedServiceUuid);
 
     if (!service) {
-      writeLogs && logInfo('[BLE] Could not find expected service for device:', serviceUuid, this.name);
+      writeLogs && logInfo('[BLE] Could not find expected service for device:', normalizedServiceUuid, this.name);
       return undefined;
     }
 
-    const characteristic = service?.characteristicsList?.find((c) => c.uuid === characteristicUuid);
+    const characteristic = service?.characteristicsList?.find(
+      (c) => normalizeUuid(c.uuid) === normalizedCharacteristicUuid
+    );
     if (!characteristic) {
-      writeLogs && logInfo('[BLE] Could not find expected characteristic for device:', characteristicUuid, this.name);
+      writeLogs &&
+        logInfo('[BLE] Could not find expected characteristic for device:', normalizedCharacteristicUuid, this.name);
       return undefined;
     }
 
@@ -115,20 +146,21 @@ export class BLEDevice implements IBLEDevice {
   getDeviceInfo = async () => {
     if (this.deviceInfo) return this.deviceInfo;
     const services = await this.getServices();
-    const service = services.find((s) => s.uuid === '0000180a-0000-1000-8000-00805f9b34fb');
+    const deviceInfoServiceUuid = normalizeUuid('0000180a-0000-1000-8000-00805f9b34fb');
+    const service = services.find((s) => normalizeUuid(s.uuid) === deviceInfoServiceUuid);
     if (!service) return undefined;
 
     const deviceInfo: BLEDeviceInfo = (this.deviceInfo = {});
     const setters: Dictionary<(value: string) => void> = {
-      '00002a24-0000-1000-8000-00805f9b34fb': (value: string) => (deviceInfo.modelNumber = value),
-      '00002a25-0000-1000-8000-00805f9b34fb': (value: string) => (deviceInfo.serialNumber = value),
-      '00002a26-0000-1000-8000-00805f9b34fb': (value: string) => (deviceInfo.firmwareRevision = value),
-      '00002a27-0000-1000-8000-00805f9b34fb': (value: string) => (deviceInfo.hardwareRevision = value),
-      '00002a28-0000-1000-8000-00805f9b34fb': (value: string) => (deviceInfo.softwareRevision = value),
-      '00002a29-0000-1000-8000-00805f9b34fb': (value: string) => (deviceInfo.manufacturerName = value),
+      [normalizeUuid('00002a24-0000-1000-8000-00805f9b34fb')]: (value: string) => (deviceInfo.modelNumber = value),
+      [normalizeUuid('00002a25-0000-1000-8000-00805f9b34fb')]: (value: string) => (deviceInfo.serialNumber = value),
+      [normalizeUuid('00002a26-0000-1000-8000-00805f9b34fb')]: (value: string) => (deviceInfo.firmwareRevision = value),
+      [normalizeUuid('00002a27-0000-1000-8000-00805f9b34fb')]: (value: string) => (deviceInfo.hardwareRevision = value),
+      [normalizeUuid('00002a28-0000-1000-8000-00805f9b34fb')]: (value: string) => (deviceInfo.softwareRevision = value),
+      [normalizeUuid('00002a29-0000-1000-8000-00805f9b34fb')]: (value: string) => (deviceInfo.manufacturerName = value),
     };
     for (const { uuid, handle } of service.characteristicsList) {
-      const setter = setters[uuid];
+      const setter = setters[normalizeUuid(uuid)];
       if (!setter) continue;
       try {
         const value = await this.readCharacteristic(handle);
@@ -140,12 +172,13 @@ export class BLEDevice implements IBLEDevice {
   };
 
   private getService = async (serviceUuid: string) => {
-    const cachedService = this.serviceCache[serviceUuid];
+    const normalizedServiceUuid = normalizeUuid(serviceUuid);
+    const cachedService = this.serviceCache[normalizedServiceUuid];
     if (cachedService !== undefined) return cachedService;
 
     const services = await this.getServices();
-    const service = services.find((s) => s.uuid === serviceUuid) || null;
-    this.serviceCache[serviceUuid] = service;
+    const service = services.find((s) => normalizeUuid(s.uuid) === normalizedServiceUuid) || null;
+    this.serviceCache[normalizedServiceUuid] = service;
     return service;
   };
 }
