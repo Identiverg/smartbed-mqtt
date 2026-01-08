@@ -7,17 +7,17 @@ import { Bed } from '../types/Bed';
 import { Controller } from '../types/Controller';
 import { SnoreRelief } from '../types/SnoreRelief';
 
-let snoreRelief: SnoreRelief | null;
-let switchSet: SnoreReliefSwitchSet | null;
+const handleSnoreReliefChange =
+  (credentials: Credentials, getSwitchSet: () => SnoreReliefSwitchSet | undefined) =>
+  async (newSnoreRelief: SnoreRelief) => {
+    const currentSwitchSet = getSwitchSet();
+    if (!currentSwitchSet) return;
+    const success = await setSnoreRelief(newSnoreRelief, credentials);
+    if (!success) return;
 
-const handleSnoreReliefChange = (credentials: Credentials) => async (newSnoreRelief: SnoreRelief) => {
-  if (!switchSet) return;
-  const success = await setSnoreRelief(newSnoreRelief, credentials);
-  if (!success) return;
-
-  snoreRelief = await getSnoreRelief(credentials);
-  switchSet.setState(snoreRelief);
-};
+    const updatedSnoreRelief = await getSnoreRelief(credentials);
+    currentSwitchSet.setState(updatedSnoreRelief);
+  };
 
 export const processSnoreReliefSwitches = async (
   mqtt: IMQTTConnection,
@@ -25,11 +25,16 @@ export const processSnoreReliefSwitches = async (
   { user, sideName, entities }: Controller
 ) => {
   const cache = entities as { snoreReliefSwitchSet?: SnoreReliefSwitchSet };
-  snoreRelief = await getSnoreRelief(user);
+  const snoreRelief = await getSnoreRelief(user);
   if (!snoreRelief) return;
 
   if (!cache.snoreReliefSwitchSet) {
-    cache.snoreReliefSwitchSet = new SnoreReliefSwitchSet(mqtt, deviceData, sideName, handleSnoreReliefChange(user));
+    cache.snoreReliefSwitchSet = new SnoreReliefSwitchSet(
+      mqtt,
+      deviceData,
+      sideName,
+      handleSnoreReliefChange(user, () => cache.snoreReliefSwitchSet)
+    );
   }
   cache.snoreReliefSwitchSet.setState(snoreRelief);
 };
