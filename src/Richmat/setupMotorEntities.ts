@@ -17,8 +17,8 @@ interface Cache {
   motorState?: MotorState & Cancelable;
 }
 
-const motorPulseCount = 1;
-const motorPulseDelayMs = 200;
+const motorPulseCount = 25;
+const motorPulseDelayMs = 100;
 
 export const setupMotorEntities = (
   mqtt: IMQTTConnection,
