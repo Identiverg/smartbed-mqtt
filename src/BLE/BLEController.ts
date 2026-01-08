@@ -26,7 +26,8 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
     private handle: number,
     private commandBuilder: (command: TCommand) => number[],
     private notifyHandles: Dictionary<number> = {},
-    private stayConnected: boolean = false
+    private stayConnected: boolean = false,
+    private requireResponse: boolean = true
   ) {
     super();
     Object.entries(notifyHandles).forEach(([key, handle]) => {
@@ -47,7 +48,7 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
       this.disconnectTimeout = undefined;
     }
     try {
-      await this.bleDevice.writeCharacteristic(this.handle, new Uint8Array(command));
+      await this.bleDevice.writeCharacteristic(this.handle, new Uint8Array(command), this.requireResponse);
     } catch (e) {
       logError(`[BLE] Failed to write characteristic`, e);
     }

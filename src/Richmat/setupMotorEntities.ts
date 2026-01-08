@@ -17,6 +17,9 @@ interface Cache {
   motorState?: MotorState & Cancelable;
 }
 
+const motorPulseCount = 1;
+const motorPulseDelayMs = 200;
+
 export const setupMotorEntities = (
   mqtt: IMQTTConnection,
   { cache, deviceData, writeCommand, cancelCommands }: IController<number> & ICache<Cache>,
@@ -41,7 +44,7 @@ export const setupMotorEntities = (
       motorState.command = command === 'OPEN' ? up : command === 'CLOSE' ? down : undefined;
       const newCommand = motorState.command;
       const sendCommand = async () => {
-        newCommand && (await writeCommand(newCommand, 50, 100));
+        newCommand && (await writeCommand(newCommand, motorPulseCount, motorPulseDelayMs));
       };
 
       if (newCommand === originalCommand) return await sendCommand();
