@@ -1,3 +1,63 @@
+diff --git a/node_modules/@2colors/esphome-native-api/index.d.ts b/node_modules/@2colors/esphome-native-api/index.d.ts
+index 31c6963..0ebc937 100644
+--- a/node_modules/@2colors/esphome-native-api/index.d.ts
++++ b/node_modules/@2colors/esphome-native-api/index.d.ts
+@@ -540,7 +540,8 @@ declare module "@2colors/esphome-native-api" {
+             address: number
+         ): Promise<BluetoothDeviceUnpairingResponse>;
+         listBluetoothGATTServicesService(
+-            address: number
++            address: number,
++            timeoutSeconds?: number
+         ): Promise<BluetoothGATTGetServicesResponse>;
+ 
+         readBluetoothGATTCharacteristicService(
+diff --git a/node_modules/@2colors/esphome-native-api/lib/connection.js b/node_modules/@2colors/esphome-native-api/lib/connection.js
+index 142b084..34e668a 100644
+--- a/node_modules/@2colors/esphome-native-api/lib/connection.js
++++ b/node_modules/@2colors/esphome-native-api/lib/connection.js
+@@ -394,7 +394,7 @@ class EsphomeNativeApiConnection extends EventEmitter {
+             10
+         );
+     }
+-    async listBluetoothGATTServicesService(address) {
++    async listBluetoothGATTServicesService(address, timeoutSeconds = 15) {
+         if (!this.connected) throw new Error(`Not connected`);
+         if (!this.authorized) throw new Error(`Not authorized`);
+         const message = new pb.BluetoothGATTGetServicesRequest([address]);
+@@ -405,18 +405,21 @@ class EsphomeNativeApiConnection extends EventEmitter {
+                 servicesList.push(...message.servicesList);
+         };
+         this.on('message.BluetoothGATTGetServicesResponse', onMessage);
+-        await this.sendMessageAwaitResponse(
+-            message,
+-            'BluetoothGATTGetServicesDoneResponse'
+-        ).then(
+-            () => {
+-                this.off('message.BluetoothGATTGetServicesResponse', onMessage);
+-            },
+-            (e) => {
+-                this.off('message.BluetoothGATTGetServicesResponse', onMessage);
+-                throw e;
++        try {
++            await this.sendMessageAwaitResponse(
++                message,
++                'BluetoothGATTGetServicesDoneResponse',
++                timeoutSeconds
++            );
++        } catch (e) {
++            this.off('message.BluetoothGATTGetServicesResponse', onMessage);
++            const messageText = e && e.message ? String(e.message) : "";
++            if (servicesList.length && messageText.includes('timeout')) {
++                return { address, servicesList };
+             }
+-        );
++            throw e;
++        }
++        this.off('message.BluetoothGATTGetServicesResponse', onMessage);
+         return { address, servicesList };
+     }
+ 
 diff --git a/node_modules/@2colors/esphome-native-api/lib/utils/frameHelper.js b/node_modules/@2colors/esphome-native-api/lib/utils/frameHelper.js
 index f0ff260..8558980 100644
 --- a/node_modules/@2colors/esphome-native-api/lib/utils/frameHelper.js

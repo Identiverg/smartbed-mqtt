@@ -58,14 +58,22 @@ export class BLEDevice implements IBLEDevice {
   getServices = async () => {
     if (!this.servicesList) {
       const maxAttempts = 2;
+      const timeoutSeconds = 15;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           if (!this.connected) await this.connect();
-          const { servicesList } = await this.connection.listBluetoothGATTServicesService(this.address);
+          await wait(750);
+          const { servicesList } = await this.connection.listBluetoothGATTServicesService(
+            this.address,
+            timeoutSeconds
+          );
           this.servicesList = servicesList;
           break;
         } catch (error) {
           logWarn(`[BLE] Failed to fetch GATT services (attempt ${attempt}/${maxAttempts}) for:`, this.name, error);
+          try {
+            await this.disconnect();
+          } catch {}
           if (attempt < maxAttempts) await wait(1000);
         }
       }
