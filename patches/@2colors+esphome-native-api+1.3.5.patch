@@ -13,10 +13,18 @@ index 31c6963..0ebc937 100644
  
          readBluetoothGATTCharacteristicService(
 diff --git a/node_modules/@2colors/esphome-native-api/lib/connection.js b/node_modules/@2colors/esphome-native-api/lib/connection.js
-index 142b084..34e668a 100644
+index 142b084..1c84d08 100644
 --- a/node_modules/@2colors/esphome-native-api/lib/connection.js
 +++ b/node_modules/@2colors/esphome-native-api/lib/connection.js
-@@ -394,7 +394,7 @@ class EsphomeNativeApiConnection extends EventEmitter {
+@@ -346,6 +346,7 @@ class EsphomeNativeApiConnection extends EventEmitter {
+         if (!this.connected) throw new Error(`Not connected`);
+         if (!this.authorized) throw new Error(`Not authorized`);
+         const message = new pb.BluetoothDeviceRequest([address]);
++        message.setRequestType(pb.BluetoothDeviceRequestType.BLUETOOTH_DEVICE_REQUEST_TYPE_CONNECT_V3_WITHOUT_CACHE);
+         if(addressType != undefined) {
+             message.setHasAddressType(true);
+             message.setAddressType(addressType);
+@@ -394,7 +395,7 @@ class EsphomeNativeApiConnection extends EventEmitter {
              10
          );
      }
@@ -25,7 +33,7 @@ index 142b084..34e668a 100644
          if (!this.connected) throw new Error(`Not connected`);
          if (!this.authorized) throw new Error(`Not authorized`);
          const message = new pb.BluetoothGATTGetServicesRequest([address]);
-@@ -405,18 +405,21 @@ class EsphomeNativeApiConnection extends EventEmitter {
+@@ -405,18 +406,21 @@ class EsphomeNativeApiConnection extends EventEmitter {
                  servicesList.push(...message.servicesList);
          };
          this.on('message.BluetoothGATTGetServicesResponse', onMessage);
