@@ -18,6 +18,24 @@ const normalizeUuid = (uuid: string) => {
   return normalized;
 };
 
+const getConnectionRegistry = (connection: Connection) => {
+  const connectionWithRegistry = connection as Connection & {
+    __bleDeviceRegistry?: Map<number, (connected: boolean) => void>;
+    __bleDeviceRegistryListener?: (message: { address: number; connected: boolean }) => void;
+  };
+  if (!connectionWithRegistry.__bleDeviceRegistry) {
+    connectionWithRegistry.__bleDeviceRegistry = new Map();
+  }
+  if (!connectionWithRegistry.__bleDeviceRegistryListener) {
+    connectionWithRegistry.__bleDeviceRegistryListener = ({ address, connected }) => {
+      const handler = connectionWithRegistry.__bleDeviceRegistry?.get(address);
+      if (handler) handler(connected);
+    };
+    connection.on('message.BluetoothDeviceConnectionResponse', connectionWithRegistry.__bleDeviceRegistryListener);
+  }
+  return connectionWithRegistry.__bleDeviceRegistry;
+};
+
 export class BLEDevice implements IBLEDevice {
   private connected = false;
   private paired = false;
@@ -41,14 +59,8 @@ export class BLEDevice implements IBLEDevice {
 
   constructor(public name: string, public advertisement: BLEAdvertisement, private connection: Connection) {
     this.mac = this.address.toString(16).padStart(12, '0');
-    this.connection.on('message.BluetoothDeviceConnectionResponse', ({ address, connected }) => {
-      if (this.address !== address) return;
-      this.connected = connected;
-      if (!connected) {
-        this.servicesList = undefined;
-        this.serviceCache = {};
-      }
-    });
+    const registry = getConnectionRegistry(this.connection);
+    registry.set(this.address, (connected) => this.handleConnectionResponse(connected));
   }
 
   pair = async () => {
@@ -180,5 +192,13 @@ export class BLEDevice implements IBLEDevice {
     const service = services.find((s) => normalizeUuid(s.uuid) === normalizedServiceUuid) || null;
     this.serviceCache[normalizedServiceUuid] = service;
     return service;
+  };
+
+  private handleConnectionResponse = (connected: boolean) => {
+    this.connected = connected;
+    if (!connected) {
+      this.servicesList = undefined;
+      this.serviceCache = {};
+    }
   };
 }

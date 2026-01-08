@@ -5,21 +5,78 @@ import { IBLEDevice } from 'ESPHome/types/IBLEDevice';
 import { supportedBeds } from './supportedBeds';
 
 const buildCommand = (command: number) => [110, 1, 0, command, command + 111];
+const isWritable = (properties?: number) => !!(properties && (properties & 0x4 || properties & 0x8 || properties & 0x40));
+const isVendorService = (uuid: string) => uuid.startsWith('0000ff');
+const preferredServiceUuids = [
+  '0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000ffe5-0000-1000-8000-00805f9b34fb',
+];
 
 export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLEDevice) => {
   const { name, getCharacteristic, getServices } = bleDevice;
 
   for (const { serviceUuid, writeCharacteristicUuid } of supportedBeds) {
     const characteristic = await getCharacteristic(serviceUuid, writeCharacteristicUuid, false);
-    if (!characteristic) continue;
+    if (!characteristic || !isWritable(characteristic.properties)) continue;
     return new BLEController(deviceData, bleDevice, characteristic.handle, buildCommand);
   }
 
   const services = await getServices();
+  const vendorServices = services.filter((service) => isVendorService(service.uuid));
+  const singleCharCandidates = vendorServices
+    .filter((service) => (service.characteristicsList || []).length === 1)
+    .map((service) => ({ service, characteristic: service.characteristicsList[0] }))
+    .filter(({ characteristic }) => isWritable(characteristic.properties));
+  if (singleCharCandidates.length === 1) {
+    const { service, characteristic } = singleCharCandidates[0];
+    logWarn(
+      '[Richmat] Auto-selected writable GATT characteristic for device:',
+      name,
+      JSON.stringify({ serviceUuid: service.uuid, characteristicUuid: characteristic.uuid, properties: characteristic.properties })
+    );
+    return new BLEController(deviceData, bleDevice, characteristic.handle, buildCommand);
+  }
+
+  const writableCandidates = vendorServices
+    .flatMap((service) =>
+      (service.characteristicsList || [])
+        .filter((characteristic) => isWritable(characteristic.properties))
+        .map((characteristic) => ({ service, characteristic }))
+    )
+    .sort((a, b) => a.service.uuid.localeCompare(b.service.uuid));
+  for (const preferredUuid of preferredServiceUuids) {
+    const preferred = writableCandidates.find((candidate) => candidate.service.uuid === preferredUuid);
+    if (preferred) {
+      logWarn(
+        '[Richmat] Auto-selected preferred GATT characteristic for device:',
+        name,
+        JSON.stringify({
+          serviceUuid: preferred.service.uuid,
+          characteristicUuid: preferred.characteristic.uuid,
+          properties: preferred.characteristic.properties,
+        })
+      );
+      return new BLEController(deviceData, bleDevice, preferred.characteristic.handle, buildCommand);
+    }
+  }
+
+  if (writableCandidates.length === 1) {
+    const { service, characteristic } = writableCandidates[0];
+    logWarn(
+      '[Richmat] Auto-selected only writable GATT characteristic for device:',
+      name,
+      JSON.stringify({ serviceUuid: service.uuid, characteristicUuid: characteristic.uuid, properties: characteristic.properties })
+    );
+    return new BLEController(deviceData, bleDevice, characteristic.handle, buildCommand);
+  }
+
   if (services.length) {
     const summary = services.map((service) => ({
       uuid: service.uuid,
-      characteristics: (service.characteristicsList || []).map((characteristic) => characteristic.uuid),
+      characteristics: (service.characteristicsList || []).map((characteristic) => ({
+        uuid: characteristic.uuid,
+        properties: characteristic.properties,
+      })),
     }));
     logWarn('[Richmat] Discovered GATT services/characteristics for device:', name, JSON.stringify(summary));
   } else {
