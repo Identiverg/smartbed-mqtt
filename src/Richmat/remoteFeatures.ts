@@ -115,4 +115,25 @@ export const remoteFeatures: Dictionary<number> = {
     Features.UnderBedLightsToggle |
     Features.MotorHead |
     Features.MotorFeet,
+  SBKDCT:
+    Features.PresetFlat |
+    Features.PresetAntiSnore |
+    Features.PresetLounge |
+    Features.PresetMemory1 |
+    Features.PresetMemory2 |
+    Features.PresetTV |
+    Features.PresetZeroG |
+    Features.ProgramAntiSnore |
+    Features.ProgramLounge |
+    Features.ProgramMemory1 |
+    Features.ProgramMemory2 |
+    Features.ProgramTV |
+    Features.ProgramZeroG |
+    Features.UnderBedLightsToggle |
+    Features.MassageHeadStep |
+    Features.MassageFootStep |
+    Features.MassageMode |
+    Features.MassageToggle |
+    Features.MotorHead |
+    Features.MotorFeet,
 };

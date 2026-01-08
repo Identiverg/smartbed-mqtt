@@ -19,4 +19,9 @@ export const supportedBeds = [
     writeCharacteristicUuid: '0000fff2-0000-1000-8000-00805f9b34fb',
     readCharacteristicUuid: '0000fff1-0000-1000-8000-00805f9b34fb',
   },
+  {
+    serviceUuid: '0000ffb0-0000-1000-8000-00805f9b34fb',
+    writeCharacteristicUuid: '0000ffb2-0000-1000-8000-00805f9b34fb',
+    readCharacteristicUuid: '0000ffb1-0000-1000-8000-00805f9b34fb',
+  },
 ];

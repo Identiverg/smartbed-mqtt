@@ -1,9 +1,10 @@
 import { BluetoothGATTService, Connection } from '@2colors/esphome-native-api';
 import { Dictionary } from '@utils/Dictionary';
+import { logInfo, logWarn } from '@utils/logger';
+import { wait } from '@utils/wait';
 import { BLEAdvertisement } from './BLEAdvertisement';
 import { BLEDeviceInfo } from './BLEDeviceInfo';
 import { IBLEDevice } from './IBLEDevice';
-import { logInfo } from '@utils/logger';
 
 export class BLEDevice implements IBLEDevice {
   private connected = false;
@@ -56,8 +57,19 @@ export class BLEDevice implements IBLEDevice {
 
   getServices = async () => {
     if (!this.servicesList) {
-      const { servicesList } = await this.connection.listBluetoothGATTServicesService(this.address);
-      this.servicesList = servicesList;
+      const maxAttempts = 2;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          if (!this.connected) await this.connect();
+          const { servicesList } = await this.connection.listBluetoothGATTServicesService(this.address);
+          this.servicesList = servicesList;
+          break;
+        } catch (error) {
+          logWarn(`[BLE] Failed to fetch GATT services (attempt ${attempt}/${maxAttempts}) for:`, this.name, error);
+          if (attempt < maxAttempts) await wait(1000);
+        }
+      }
+      this.servicesList = this.servicesList ?? [];
     }
     return this.servicesList;
   };
