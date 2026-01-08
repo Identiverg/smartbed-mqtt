@@ -9,7 +9,7 @@ import { controllerBuilder as nordicControllerBuilder } from './Nordic/controlle
 import { isSupported as isNordicSupported } from './Nordic/isSupported';
 import { controllerBuilder as wiLinkeControllerBuilder } from './WiLinke/controllerBuilder';
 import { isSupported as isWiLinkeSupported } from './WiLinke/isSupported';
-import { getDevices } from './options';
+import { RichmatDevice, getDevices } from './options';
 import { remoteFeatures } from './remoteFeatures';
 import { setupMassageButtons } from './setupMassageButtons';
 import { setupPresetButtons } from './setupPresetButtons';
@@ -18,6 +18,29 @@ import { setupMotorEntities } from './setupMotorEntities';
 
 const checks = [isNordicSupported, isWiLinkeSupported];
 const controllerBuilders = [nordicControllerBuilder, wiLinkeControllerBuilder];
+const buildCommandBuilder = (commandProtocol?: RichmatDevice['commandProtocol']) => {
+  switch (commandProtocol) {
+    case 'single':
+      return (command: number) => [command & 0xff];
+    case 'prefix55': {
+      const prefix = [0x55, 0x01, 0x00];
+      return (command: number) => {
+        const checksum = (command + prefix[0] + prefix[1]) & 0xff;
+        return [...prefix, command & 0xff, checksum];
+      };
+    }
+    case 'prefixaa': {
+      const prefix = [0xaa, 0x01, 0x00];
+      return (command: number) => {
+        const checksum = (command + prefix[0] + prefix[1]) & 0xff;
+        return [...prefix, command & 0xff, checksum];
+      };
+    }
+    case 'wilinke':
+    default:
+      return (command: number) => [110, 1, 0, command & 0xff, (command + 111) & 0xff];
+  }
+};
 
 export const richmat = async (mqtt: IMQTTConnection, esphome: IESPConnection) => {
   const devices = getDevices();
@@ -53,10 +76,14 @@ export const richmat = async (mqtt: IMQTTConnection, esphome: IESPConnection) =>
       continue;
     }
 
+    const commandProtocol = device.commandProtocol ?? 'wilinke';
+    const commandBuilder = buildCommandBuilder(commandProtocol);
+    logInfo('[Richmat] Using command protocol for device:', name, commandProtocol);
+
     const deviceData = buildMQTTDeviceData({ ...device, address }, 'Richmat');
     await connect();
 
-    const controller = await controllerBuilder(deviceData, bleDevice);
+    const controller = await controllerBuilder(deviceData, bleDevice, commandBuilder);
     if (!controller) {
       await disconnect();
       continue;

@@ -4,7 +4,7 @@ import { BLEController } from 'BLE/BLEController';
 import { IBLEDevice } from 'ESPHome/types/IBLEDevice';
 import { supportedBeds } from './supportedBeds';
 
-const buildCommand = (command: number) => [110, 1, 0, command, command + 111];
+const defaultCommandBuilder = (command: number) => [110, 1, 0, command, command + 111];
 const canWriteWithoutResponse = (properties?: number) => !!(properties && (properties & 0x4));
 const isWritable = (properties?: number) => !!(properties && (properties & 0x4 || properties & 0x8 || properties & 0x40));
 const isVendorService = (uuid: string) => uuid.startsWith('0000ff');
@@ -13,8 +13,13 @@ const preferredServiceUuids = [
   '0000ffe5-0000-1000-8000-00805f9b34fb',
 ];
 
-export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLEDevice) => {
+export const controllerBuilder = async (
+  deviceData: IDeviceData,
+  bleDevice: IBLEDevice,
+  commandBuilder?: (command: number) => number[]
+) => {
   const { name, getCharacteristic, getServices } = bleDevice;
+  const buildCommand = commandBuilder ?? defaultCommandBuilder;
 
   for (const { serviceUuid, writeCharacteristicUuid } of supportedBeds) {
     const characteristic = await getCharacteristic(serviceUuid, writeCharacteristicUuid, false);

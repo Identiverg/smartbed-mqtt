@@ -5,6 +5,7 @@ export interface RichmatDevice {
   name: string;
   remoteCode: string;
   stayConnected: boolean | undefined;
+  commandProtocol: 'wilinke' | 'single' | 'prefix55' | 'prefixaa' | undefined;
 }
 
 interface OptionsJson {
