@@ -1,0 +1,74 @@
+diff --git a/node_modules/@2colors/esphome-native-api/lib/utils/frameHelper.js b/node_modules/@2colors/esphome-native-api/lib/utils/frameHelper.js
+index f0ff260..8558980 100644
+--- a/node_modules/@2colors/esphome-native-api/lib/utils/frameHelper.js
++++ b/node_modules/@2colors/esphome-native-api/lib/utils/frameHelper.js
+@@ -42,14 +42,17 @@ class FrameHelper extends EventEmitter {
+     }
+ 
+     buildMessage(messageId, bytes) {
++        const type = id_to_type[messageId];
++        if (typeof type === "undefined") {
++            return null;
++        }
+         try {
+-            return pb[id_to_type[messageId]].deserializeBinary(bytes);
++            return pb[type].deserializeBinary(bytes);
+         } catch(e) {
+             this.emit('error', new Error(`Failed find or parsed message type for Id: ${messageId}`));
+-            if (typeof id_to_type[messageId] !== undefined) {
+-                // we know this type and close connect mb error or freeze connect
+-                this.end();
+-            }
++            // we know this type and close connect mb error or freeze connect
++            this.end();
++            return null;
+         }
+     }
+ 
+diff --git a/node_modules/@2colors/esphome-native-api/lib/utils/noiseFrameHelper.js b/node_modules/@2colors/esphome-native-api/lib/utils/noiseFrameHelper.js
+index a07678d..72c99c5 100644
+--- a/node_modules/@2colors/esphome-native-api/lib/utils/noiseFrameHelper.js
++++ b/node_modules/@2colors/esphome-native-api/lib/utils/noiseFrameHelper.js
+@@ -67,7 +67,9 @@ class NoiseFrameHelper extends FrameHelper {
+                         const message = this.deserialize(
+                             this.decryptor.DecryptWithAd([], frame)
+                         );
+-                        this.emit("message", message);
++                        if (message && !message.skip) {
++                            this.emit("message", message);
++                        }
+                 }
+             }
+         } catch (e) {
+@@ -128,6 +130,9 @@ class NoiseFrameHelper extends FrameHelper {
+         const messageId = (buffer[0] << 8) | buffer[1];
+         const messageLength = (buffer[2] << 8) | buffer[3];
+         const message = this.buildMessage(messageId, buffer.subarray(4, messageLength + 4));
++        if (!message) {
++            return { length: messageLength + 4, skip: true };
++        }
+         message.length = messageLength + 4;
+         return message;
+     }
+diff --git a/node_modules/@2colors/esphome-native-api/lib/utils/plaintextFrameHelper.js b/node_modules/@2colors/esphome-native-api/lib/utils/plaintextFrameHelper.js
+index 8bb8dfe..838973b 100644
+--- a/node_modules/@2colors/esphome-native-api/lib/utils/plaintextFrameHelper.js
++++ b/node_modules/@2colors/esphome-native-api/lib/utils/plaintextFrameHelper.js
+@@ -43,6 +43,9 @@ class PlaintextFrameHelper extends FrameHelper {
+             return null;
+ 
+         const message = this.buildMessage(messageId, buffer.subarray(offset, messageLength + offset));
++        if (!message) {
++            return { length: messageLength + offset, skip: true };
++        }
+         message.length = messageLength + offset;
+         return message;
+     }
+@@ -54,6 +57,7 @@ class PlaintextFrameHelper extends FrameHelper {
+         try {
+             while ((message = this.deserialize(this.buffer))) {
+                 this.buffer = this.buffer.slice(message.length);
++                if (message.skip) continue;
+                 this.emit("message", message);
+             }
+         } catch (e) {

@@ -7,6 +7,7 @@ WORKDIR /smartbed-mqtt
 # Copy dependency manifests first
 COPY package.json ./
 COPY yarn.lock ./
+COPY patches ./patches
 
 # Install deps (deterministic if yarn.lock exists)
 RUN yarn install
