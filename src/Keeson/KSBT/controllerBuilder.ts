@@ -3,9 +3,6 @@ import { intToBytes } from '@utils/intToBytes';
 import { BLEController } from 'BLE/BLEController';
 import { IBLEDevice } from 'ESPHome/types/IBLEDevice';
 
-const canWriteWithoutResponse = (properties?: number) =>
-  properties === undefined ? true : !!(properties & 0x4);
-
 const buildCommand = (command: number) => [0x4, 0x2, ...intToBytes(command)];
 
 export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLEDevice) => {
@@ -17,6 +14,6 @@ export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLE
   );
   if (!characteristic) return undefined;
 
-  const requireResponse = !canWriteWithoutResponse(characteristic.properties);
+  const requireResponse = false;
   return new BLEController(deviceData, bleDevice, characteristic.handle, buildCommand, {}, false, requireResponse);
 };

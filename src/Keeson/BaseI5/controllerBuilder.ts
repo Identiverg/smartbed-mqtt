@@ -6,9 +6,6 @@ import { sum } from '@utils/sum';
 import { BLEController } from 'BLE/BLEController';
 import { IBLEDevice } from 'ESPHome/types/IBLEDevice';
 
-const canWriteWithoutResponse = (properties?: number) =>
-  properties === undefined ? true : !!(properties & 0x4);
-
 const buildCommand = (command: number) => {
   const data = [0xe5, 0xfe, 0x16, ...intToBytes(command).reverse()];
   const checksum = data.reduce(sum) ^ 0xff;
@@ -46,27 +43,17 @@ export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLE
     );
     if (!writeCharacteristic) continue;
 
-    let notifyHandles;
-    if (candidate.notifyServiceUuid && candidate.notifyCharacteristicUuid) {
-      const notifyCharacteristic = await getCharacteristic(
-        candidate.notifyServiceUuid,
-        candidate.notifyCharacteristicUuid,
-        false
-      );
-      notifyHandles = notifyCharacteristic && { notify: notifyCharacteristic.handle };
-    }
-
     if (candidate.label !== 'base-ffe5') {
       logWarn('[Keeson] Using fallback GATT characteristic:', JSON.stringify(candidate));
     }
 
-    const requireResponse = !canWriteWithoutResponse(writeCharacteristic.properties);
+    const requireResponse = false;
     return new BLEController(
       deviceData,
       bleDevice,
       writeCharacteristic.handle,
       buildCommand,
-      notifyHandles,
+      {},
       false,
       requireResponse
     );
