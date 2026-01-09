@@ -66,6 +66,19 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
       const {
         advertisement: { manufacturerDataList, serviceUuidsList },
       } = bleDevice;
+      const services = await bleDevice.getServices();
+      if (services.length) {
+        const summary = services.map((service) => ({
+          uuid: service.uuid,
+          characteristics: (service.characteristicsList || []).map((characteristic) => ({
+            uuid: characteristic.uuid,
+            properties: characteristic.properties,
+          })),
+        }));
+        logWarn('[Keeson] Discovered GATT services/characteristics for device:', name, JSON.stringify(summary));
+      } else {
+        logWarn('[Keeson] No GATT services discovered for device:', name);
+      }
       logWarn(
         '[Keeson] Device not supported, please contact me on Discord',
         name,

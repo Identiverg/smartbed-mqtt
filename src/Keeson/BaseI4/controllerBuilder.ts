@@ -1,5 +1,6 @@
 import { IDeviceData } from '@ha/IDeviceData';
 import { byte } from '@utils/byte';
+import { logWarn } from '@utils/logger';
 import { intToBytes } from '@utils/intToBytes';
 import { sum } from '@utils/sum';
 import { BLEController } from 'BLE/BLEController';
@@ -17,13 +18,45 @@ const buildCommand = (command: number) => {
 
 export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLEDevice) => {
   const { getCharacteristic } = bleDevice;
+  const candidates = [
+    {
+      label: 'base-ffe5',
+      serviceUuid: '0000ffe5-0000-1000-8000-00805f9b34fb',
+      writeCharacteristicUuid: '0000ffe9-0000-1000-8000-00805f9b34fb',
+    },
+    {
+      label: 'alt-fff0',
+      serviceUuid: '0000fff0-0000-1000-8000-00805f9b34fb',
+      writeCharacteristicUuid: '0000fff2-0000-1000-8000-00805f9b34fb',
+    },
+    {
+      label: 'alt-ffb0',
+      serviceUuid: '0000ffb0-0000-1000-8000-00805f9b34fb',
+      writeCharacteristicUuid: '0000ffb2-0000-1000-8000-00805f9b34fb',
+    },
+  ];
 
-  const writeCharacteristic = await getCharacteristic(
-    '0000ffe5-0000-1000-8000-00805f9b34fb',
-    '0000ffe9-0000-1000-8000-00805f9b34fb'
-  );
-  if (!writeCharacteristic) return undefined;
+  for (const candidate of candidates) {
+    const writeCharacteristic = await getCharacteristic(
+      candidate.serviceUuid,
+      candidate.writeCharacteristicUuid,
+      false
+    );
+    if (!writeCharacteristic) continue;
+    if (candidate.label !== 'base-ffe5') {
+      logWarn('[Keeson] Using fallback GATT characteristic:', JSON.stringify(candidate));
+    }
+    const requireResponse = !canWriteWithoutResponse(writeCharacteristic.properties);
+    return new BLEController(
+      deviceData,
+      bleDevice,
+      writeCharacteristic.handle,
+      buildCommand,
+      {},
+      false,
+      requireResponse
+    );
+  }
 
-  const requireResponse = !canWriteWithoutResponse(writeCharacteristic.properties);
-  return new BLEController(deviceData, bleDevice, writeCharacteristic.handle, buildCommand, {}, false, requireResponse);
+  return undefined;
 };
