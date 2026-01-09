@@ -2,7 +2,8 @@ import { IDeviceData } from '@ha/IDeviceData';
 import { BLEController } from 'BLE/BLEController';
 import { IBLEDevice } from 'ESPHome/types/IBLEDevice';
 
-const canWriteWithoutResponse = (properties?: number) => !!(properties && (properties & 0x4));
+const canWriteWithoutResponse = (properties?: number) =>
+  properties === undefined ? true : !!(properties & 0x4);
 
 export const controllerBuilder = async (
   deviceData: IDeviceData,

@@ -5,6 +5,9 @@ import { sum } from '@utils/sum';
 import { BLEController } from 'BLE/BLEController';
 import { IBLEDevice } from 'ESPHome/types/IBLEDevice';
 
+const canWriteWithoutResponse = (properties?: number) =>
+  properties === undefined ? true : !!(properties & 0x4);
+
 const buildCommand = (command: number) => {
   const data = [0xe5, 0xfe, 0x16, ...intToBytes(command).reverse()];
   const checksum = data.reduce(sum) ^ 0xff;
@@ -28,5 +31,14 @@ export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLE
   );
   const notifyHandles = notifyCharacteristic && { notify: notifyCharacteristic.handle };
 
-  return new BLEController(deviceData, bleDevice, writeCharacteristic.handle, buildCommand, notifyHandles);
+  const requireResponse = !canWriteWithoutResponse(writeCharacteristic.properties);
+  return new BLEController(
+    deviceData,
+    bleDevice,
+    writeCharacteristic.handle,
+    buildCommand,
+    notifyHandles,
+    false,
+    requireResponse
+  );
 };

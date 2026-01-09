@@ -5,12 +5,16 @@ import { IBLEDevice } from 'ESPHome/types/IBLEDevice';
 import { supportedBeds } from './supportedBeds';
 
 const defaultCommandBuilder = (command: number) => [110, 1, 0, command, command + 111];
-const canWriteWithoutResponse = (properties?: number) => !!(properties && (properties & 0x4));
-const isWritable = (properties?: number) => !!(properties && (properties & 0x4 || properties & 0x8 || properties & 0x40));
-const isVendorService = (uuid: string) => uuid.startsWith('0000ff');
+const canWriteWithoutResponse = (properties?: number) =>
+  properties === undefined ? true : !!(properties & 0x4);
+const isWritable = (properties?: number) =>
+  properties === undefined ? true : !!(properties & 0x4 || properties & 0x8 || properties & 0x40);
+const isVendorService = (uuid: string) => !uuid.toLowerCase().startsWith('000018');
 const preferredServiceUuids = [
-  '0000ffe0-0000-1000-8000-00805f9b34fb',
-  '0000ffe5-0000-1000-8000-00805f9b34fb',
+  '8ebd4f76-da9d-4b5a-a96e-8ebfbeb622e7',
+  '0000fee9-0000-1000-8000-00805f9b34fb',
+  '0000fff0-0000-1000-8000-00805f9b34fb',
+  '0000ffb0-0000-1000-8000-00805f9b34fb',
 ];
 
 export const controllerBuilder = async (

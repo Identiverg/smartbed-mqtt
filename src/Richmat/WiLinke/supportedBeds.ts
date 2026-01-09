@@ -20,16 +20,6 @@ export const supportedBeds = [
     readCharacteristicUuid: '0000fff1-0000-1000-8000-00805f9b34fb',
   },
   {
-    serviceUuid: '0000ffe0-0000-1000-8000-00805f9b34fb',
-    writeCharacteristicUuid: '0000ffe4-0000-1000-8000-00805f9b34fb',
-    readCharacteristicUuid: '0000ffe4-0000-1000-8000-00805f9b34fb',
-  },
-  {
-    serviceUuid: '0000ffe5-0000-1000-8000-00805f9b34fb',
-    writeCharacteristicUuid: '0000ffe9-0000-1000-8000-00805f9b34fb',
-    readCharacteristicUuid: '0000ffe9-0000-1000-8000-00805f9b34fb',
-  },
-  {
     serviceUuid: '0000ffb0-0000-1000-8000-00805f9b34fb',
     writeCharacteristicUuid: '0000ffb2-0000-1000-8000-00805f9b34fb',
     readCharacteristicUuid: '0000ffb1-0000-1000-8000-00805f9b34fb',

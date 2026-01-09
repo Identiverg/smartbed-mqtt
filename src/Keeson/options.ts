@@ -3,6 +3,9 @@ import { getRootOptions } from '@utils/options';
 export interface KeesonDevice {
   friendlyName: string;
   name: string;
+  variant?: 'auto' | 'base' | 'ksbt';
+  motorPulseCount?: number;
+  motorPulseDelayMs?: number;
 }
 
 interface OptionsJson {

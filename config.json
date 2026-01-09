@@ -1,6 +1,6 @@
 {
   "name": "Smartbed MQTT",
-  "version": "1.5",
+  "version": "1.6",
   "slug": "smartbed-mqtt",
   "description": "A Home Assistant add-on to enable controlling smart beds. *Chris's Fork*",
   "url": "https://github.com/richardhopton/smartbed-mqtt",
@@ -53,7 +53,9 @@
         "friendlyName": "Richmat Bed",
         "remoteCode": "VIRM",
         "commandProtocol": "wilinke",
-        "stayConnected": "false"
+        "stayConnected": "false",
+        "motorPulseCount": 1,
+        "motorPulseDelayMs": 200
       }
     ],
     "linakDevices": [
@@ -98,7 +100,10 @@
     "keesonDevices": [
       {
         "name": "KSBT03C000015046",
-        "friendlyName": "Keeson Bed"
+        "friendlyName": "Keeson Bed",
+        "variant": "auto",
+        "motorPulseCount": 1,
+        "motorPulseDelayMs": 200
       }
     ],
     "octoDevices": [
@@ -159,8 +164,10 @@
         "name": "str",
         "friendlyName": "str",
         "remoteCode": "str",
-        "commandProtocol": "list(wilinke|single|prefix55|prefixaa)?",
-        "stayConnected": "bool?"
+        "commandProtocol": "list(wilinke|nordic|single|prefix55|prefixaa)?",
+        "stayConnected": "bool?",
+        "motorPulseCount": "int(1,)?",
+        "motorPulseDelayMs": "int(0,)?"
       }
     ],
     "linakDevices": [
@@ -206,7 +213,10 @@
     "keesonDevices": [
       {
         "name": "str",
-        "friendlyName": "str"
+        "friendlyName": "str",
+        "variant": "list(auto|base|ksbt)?",
+        "motorPulseCount": "int(1,)?",
+        "motorPulseDelayMs": "int(0,)?"
       }
     ],
     "octoDevices": [

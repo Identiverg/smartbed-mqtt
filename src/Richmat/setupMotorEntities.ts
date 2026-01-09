@@ -17,15 +17,25 @@ interface Cache {
   motorState?: MotorState & Cancelable;
 }
 
-const motorPulseCount = 25;
-const motorPulseDelayMs = 100;
+interface MotorOptions {
+  motorPulseCount?: number;
+  motorPulseDelayMs?: number;
+}
+
+const defaultMotorPulseCount = 25;
+const defaultMotorPulseDelayMs = 100;
 
 export const setupMotorEntities = (
   mqtt: IMQTTConnection,
   { cache, deviceData, writeCommand, cancelCommands }: IController<number> & ICache<Cache>,
-  hasFeature: HasFeature
+  hasFeature: HasFeature,
+  options: MotorOptions = {}
 ) => {
   if (!cache.motorState) cache.motorState = {};
+
+  const motorPulseCount = Math.max(1, options.motorPulseCount ?? defaultMotorPulseCount);
+  const motorPulseDelayMs = options.motorPulseDelayMs ?? defaultMotorPulseDelayMs;
+  const motorPulseWaitTime = motorPulseCount > 1 ? motorPulseDelayMs : undefined;
 
   const buildCommand = (name: StringsKey, feature: Features, up: number, down: number) =>
     hasFeature(feature) ? { name, up, down } : null;
@@ -44,7 +54,7 @@ export const setupMotorEntities = (
       motorState.command = command === 'OPEN' ? up : command === 'CLOSE' ? down : undefined;
       const newCommand = motorState.command;
       const sendCommand = async () => {
-        newCommand && (await writeCommand(newCommand, motorPulseCount, motorPulseDelayMs));
+        newCommand && (await writeCommand(newCommand, motorPulseCount, motorPulseWaitTime));
       };
 
       if (newCommand === originalCommand) return await sendCommand();

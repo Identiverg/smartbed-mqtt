@@ -17,6 +17,14 @@ interface Cache {
   motorState?: MotorState & Cancelable;
 }
 
+interface MotorOptions {
+  motorPulseCount?: number;
+  motorPulseDelayMs?: number;
+}
+
+const defaultMotorPulseCount = 25;
+const defaultMotorPulseDelayMs = 200;
+
 const move = (motorState: MotorState) => {
   let command = 0;
   const { head, feet, tilt, lumbar } = motorState;
@@ -29,9 +37,14 @@ const move = (motorState: MotorState) => {
 
 export const setupMotorEntities = (
   mqtt: IMQTTConnection,
-  { cache, deviceData, writeCommand, cancelCommands }: IController<number> & ICache<Cache>
+  { cache, deviceData, writeCommand, cancelCommands }: IController<number> & ICache<Cache>,
+  options: MotorOptions = {}
 ) => {
   if (!cache.motorState) cache.motorState = {};
+
+  const motorPulseCount = Math.max(1, options.motorPulseCount ?? defaultMotorPulseCount);
+  const motorPulseDelayMs = options.motorPulseDelayMs ?? defaultMotorPulseDelayMs;
+  const motorPulseWaitTime = motorPulseCount > 1 ? motorPulseDelayMs : undefined;
 
   const buildCoverCommand = (motor: keyof MotorState) => async (command: string) => {
     const motorState = cache.motorState!;
@@ -39,7 +52,7 @@ export const setupMotorEntities = (
     motorState[motor] = command === 'OPEN' ? true : command === 'CLOSE' ? false : undefined;
     const newCommand = move(motorState);
     const sendCommand = async () => {
-      newCommand && (await writeCommand(newCommand, 25, 200));
+      newCommand && (await writeCommand(newCommand, motorPulseCount, motorPulseWaitTime));
     };
 
     if (newCommand === originalCommand) return await sendCommand();

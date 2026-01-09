@@ -21,6 +21,7 @@ const controllerBuilders = [nordicControllerBuilder, wiLinkeControllerBuilder];
 const buildCommandBuilder = (commandProtocol?: RichmatDevice['commandProtocol']) => {
   switch (commandProtocol) {
     case 'single':
+    case 'nordic':
       return (command: number) => [command & 0xff];
     case 'prefix55': {
       const prefix = [0x55, 0x01, 0x00];
@@ -68,7 +69,8 @@ export const richmat = async (mqtt: IMQTTConnection, esphome: IESPConnection) =>
       continue;
     }
 
-    const { remoteCode, ...device } = devicesMap[mac] || devicesMap[name.toLowerCase()];
+    const { remoteCode, motorPulseCount, motorPulseDelayMs, ...device } =
+      devicesMap[mac] || devicesMap[name.toLowerCase()];
 
     const features = remoteFeatures[remoteCode];
     if (!features) {
@@ -96,7 +98,7 @@ export const richmat = async (mqtt: IMQTTConnection, esphome: IESPConnection) =>
     setupPresetButtons(mqtt, controller, hasFeature);
     setupMassageButtons(mqtt, controller, hasFeature);
     setupUnderBedLightButton(mqtt, controller, hasFeature);
-    setupMotorEntities(mqtt, controller, hasFeature);
+    setupMotorEntities(mqtt, controller, hasFeature, { motorPulseCount, motorPulseDelayMs });
 
     const deviceInfo = await bleDevice.getDeviceInfo();
     if (deviceInfo) setupDeviceInfoSensor(mqtt, controller, deviceInfo);
