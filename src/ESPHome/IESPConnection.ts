@@ -3,6 +3,7 @@ import { IBLEDevice } from './types/IBLEDevice';
 export interface IESPConnection {
   disconnect(): void;
   reconnect(): Promise<void>;
+  rebootProxy(host: string, port?: number): Promise<void>;
   getBLEDevices(deviceNames: string[], nameMapper?: (name: string) => string): Promise<IBLEDevice[]>;
   discoverBLEDevices(
     onNewDeviceFound: (bleDevice: IBLEDevice) => void,

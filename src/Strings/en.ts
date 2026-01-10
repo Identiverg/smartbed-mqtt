@@ -97,6 +97,7 @@ const strings = {
   MotorNeck: 'Neck',
   MotorLift: 'Lift',
   MotorPillow: 'Pillow',
+  ProxyReboot: 'Reboot Proxy',
 };
 
 export default strings;

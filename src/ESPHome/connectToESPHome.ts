@@ -18,5 +18,5 @@ export const connectToESPHome = async (): Promise<IESPConnection> => {
             return await connect(connection);
           })
         );
-  return new ESPConnection(connections);
+  return new ESPConnection(connections, proxies);
 };

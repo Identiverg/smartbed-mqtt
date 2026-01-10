@@ -3,6 +3,7 @@ import { loadStrings } from '@utils/getString';
 import { logError, logWarn } from '@utils/logger';
 import { getType } from '@utils/options';
 import { connectToESPHome } from 'ESPHome/connectToESPHome';
+import { setupProxyRebootButtons } from 'ESPHome/setupProxyRebootButtons';
 import { ergomotion } from 'ErgoMotion/ergomotion';
 import { ergowifi } from 'ErgoWifi/ergowifi';
 import { keeson } from 'Keeson/keeson';
@@ -54,6 +55,7 @@ const start = async () => {
   }
   // bluetooth
   const esphome = await connectToESPHome();
+  setupProxyRebootButtons(mqtt, esphome);
   switch (getType()) {
     case 'richmat':
       return void (await richmat(mqtt, esphome));
