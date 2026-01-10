@@ -27,7 +27,8 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
     private commandBuilder: (command: TCommand) => number[],
     private notifyHandles: Dictionary<number> = {},
     private stayConnected: boolean = false,
-    private requireResponse: boolean = true
+    private requireResponse: boolean = true,
+    private disconnectDelayMs: number = 60_000
   ) {
     super();
     Object.entries(notifyHandles).forEach(([key, handle]) => {
@@ -56,7 +57,7 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
     }
     if (this.stayConnected || !writeSucceeded) return;
 
-    this.disconnectTimeout = setTimeout(this.disconnect, 60_000);
+    this.disconnectTimeout = setTimeout(this.disconnect, this.disconnectDelayMs);
   };
 
   writeCommand = (command: TCommand, count: number = 1, waitTime?: number) =>
@@ -65,6 +66,11 @@ export class BLEController<TCommand> extends EventEmitter implements IEventSourc
   writeCommands = async (commands: TCommand[], count: number = 1, waitTime?: number) => {
     const commandList = commands.map(this.commandBuilder).filter((command) => command.length > 0);
     if (commandList.length === 0) return;
+
+    if (this.disconnectTimeout) {
+      clearTimeout(this.disconnectTimeout);
+      this.disconnectTimeout = undefined;
+    }
 
     try {
       await this.bleDevice.connect();

@@ -13,6 +13,7 @@ const PAIR_TIMEOUT_MS = 15_000;
 const WRITE_TIMEOUT_MS = 8_000;
 const READ_TIMEOUT_MS = 8_000;
 const NOTIFY_TIMEOUT_MS = 8_000;
+const PROXY_AUTH_TIMEOUT_MS = 10_000;
 
 const normalizeUuid = (uuid: string) => {
   if (!uuid) return '';
@@ -93,6 +94,7 @@ export class BLEDevice implements IBLEDevice {
     const { addressType } = this.advertisement;
     this.connecting = (async () => {
       try {
+        await this.ensureProxyConnected();
         const { connected, error } = await this.withTimeout(
           'connect',
           this.connection.connectBluetoothDeviceService(this.address, addressType),
@@ -122,10 +124,13 @@ export class BLEDevice implements IBLEDevice {
   };
 
   disconnect = async () => {
+    const wasConnected = this.connected;
     this.connected = false;
     this.servicesList = undefined;
     this.serviceCache = {};
     if (this.disconnecting) return this.disconnecting;
+    if (!wasConnected) return;
+    if (!this.connection.connected || !this.connection.authorized) return;
     this.disconnecting = (async () => {
       try {
         await this.withTimeout(
@@ -286,5 +291,42 @@ export class BLEDevice implements IBLEDevice {
     } finally {
       if (timeout) clearTimeout(timeout);
     }
+  }
+
+  private async ensureProxyConnected(timeoutMs: number = PROXY_AUTH_TIMEOUT_MS): Promise<void> {
+    if (this.connection.connected && this.connection.authorized) return;
+
+    await new Promise<void>((resolve, reject) => {
+      let timeout: NodeJS.Timeout | undefined;
+      const onAuthorized = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = (error: any) => {
+        cleanup();
+        reject(error);
+      };
+      const cleanup = () => {
+        this.connection.off('authorized', onAuthorized);
+        this.connection.off('error', onError);
+        if (timeout) clearTimeout(timeout);
+      };
+
+      this.connection.once('authorized', onAuthorized);
+      this.connection.once('error', onError);
+      timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error(`[BLE] Proxy connection timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      if (!this.connection.connected) {
+        try {
+          this.connection.connect();
+        } catch (error) {
+          cleanup();
+          reject(error);
+        }
+      }
+    });
   }
 }

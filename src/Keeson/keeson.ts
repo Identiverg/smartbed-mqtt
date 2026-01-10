@@ -100,5 +100,11 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
 
     const deviceInfo = await getDeviceInfo();
     if (deviceInfo) setupDeviceInfoSensor(mqtt, controller, deviceInfo);
+
+    try {
+      await disconnect();
+    } catch (error) {
+      logWarn('[Keeson] Failed to disconnect from device:', name, error);
+    }
   }
 };

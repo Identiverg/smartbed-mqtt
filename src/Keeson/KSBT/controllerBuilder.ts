@@ -4,6 +4,7 @@ import { BLEController } from 'BLE/BLEController';
 import { IBLEDevice } from 'ESPHome/types/IBLEDevice';
 
 const buildCommand = (command: number) => [0x4, 0x2, ...intToBytes(command)];
+const disconnectDelayMs = 5_000;
 
 export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLEDevice) => {
   const { getCharacteristic } = bleDevice;
@@ -15,5 +16,14 @@ export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLE
   if (!characteristic) return undefined;
 
   const requireResponse = false;
-  return new BLEController(deviceData, bleDevice, characteristic.handle, buildCommand, {}, false, requireResponse);
+  return new BLEController(
+    deviceData,
+    bleDevice,
+    characteristic.handle,
+    buildCommand,
+    {},
+    false,
+    requireResponse,
+    disconnectDelayMs
+  );
 };

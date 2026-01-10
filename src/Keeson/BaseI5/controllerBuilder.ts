@@ -12,6 +12,7 @@ const buildCommand = (command: number) => {
   data.push(checksum);
   return data.map(byte);
 };
+const disconnectDelayMs = 5_000;
 
 export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLEDevice) => {
   const { getCharacteristic } = bleDevice;
@@ -55,7 +56,8 @@ export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLE
       buildCommand,
       {},
       false,
-      requireResponse
+      requireResponse,
+      disconnectDelayMs
     );
   }
 
