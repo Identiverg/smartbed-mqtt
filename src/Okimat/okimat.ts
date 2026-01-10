@@ -1,7 +1,7 @@
 import { IMQTTConnection } from '@mqtt/IMQTTConnection';
 import { buildDictionary } from '@utils/buildDictionary';
 import { intToBytes } from '@utils/intToBytes';
-import { logError, logInfo } from '@utils/logger';
+import { logError, logInfo, logWarn } from '@utils/logger';
 import { BLEController } from 'BLE/BLEController';
 import { setupDeviceInfoSensor } from 'BLE/setupDeviceInfoSensor';
 import { buildMQTTDeviceData } from 'Common/buildMQTTDeviceData';
@@ -31,8 +31,14 @@ export const okimat = async (mqtt: IMQTTConnection, esphome: IESPConnection) => 
       continue;
     }
     const deviceData = buildMQTTDeviceData({ ...device, address }, 'Okimat');
-    await connect();
-    await pair();
+    try {
+      await connect();
+      await pair();
+    } catch (error) {
+      logWarn('[Okimat] Failed to connect or pair device:', name, error);
+      await disconnect();
+      continue;
+    }
 
     const writeCharacteristic = await getCharacteristic(
       '62741523-52f9-8864-b1ab-3b3a8d65950b',

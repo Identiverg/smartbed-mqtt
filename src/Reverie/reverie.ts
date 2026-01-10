@@ -39,7 +39,12 @@ export const reverie = async (mqtt: IMQTTConnection, esphome: IESPConnection) =>
 
     const device = devicesMap[mac] || devicesMap[name.toLowerCase()];
     const deviceData = buildMQTTDeviceData({ ...device, address }, 'Reverie');
-    await connect();
+    try {
+      await connect();
+    } catch (error) {
+      logWarn('[Reverie] Failed to connect to device:', name, error);
+      continue;
+    }
 
     const controller = await controllerBuilder(mqtt, deviceData, bleDevice);
     if (!controller) {

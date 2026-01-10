@@ -7,6 +7,12 @@ import { BLEDeviceInfo } from './BLEDeviceInfo';
 import { IBLEDevice } from './IBLEDevice';
 
 const BT_BASE_UUID_SUFFIX = '0000-1000-8000-00805f9b34fb';
+const CONNECT_TIMEOUT_MS = 15_000;
+const DISCONNECT_TIMEOUT_MS = 10_000;
+const PAIR_TIMEOUT_MS = 15_000;
+const WRITE_TIMEOUT_MS = 8_000;
+const READ_TIMEOUT_MS = 8_000;
+const NOTIFY_TIMEOUT_MS = 8_000;
 
 const normalizeUuid = (uuid: string) => {
   if (!uuid) return '';
@@ -40,6 +46,7 @@ export class BLEDevice implements IBLEDevice {
   private connected = false;
   private paired = false;
   private connecting?: Promise<void>;
+  private disconnecting?: Promise<void>;
 
   private servicesList?: BluetoothGATTService[];
   private serviceCache: Dictionary<BluetoothGATTService | null> = {};
@@ -64,8 +71,20 @@ export class BLEDevice implements IBLEDevice {
   }
 
   pair = async () => {
-    const { paired } = await this.connection.pairBluetoothDeviceService(this.address);
-    this.paired = paired;
+    try {
+      const { paired, error } = await this.withTimeout(
+        'pair',
+        this.connection.pairBluetoothDeviceService(this.address),
+        PAIR_TIMEOUT_MS
+      );
+      this.paired = paired;
+      if (!paired && error) {
+        throw new Error(`Pair failed with error ${error}`);
+      }
+    } catch (error) {
+      logWarn(`[BLE] Failed to pair device: ${this.name}`, error);
+      throw error;
+    }
   };
 
   connect = async () => {
@@ -73,9 +92,27 @@ export class BLEDevice implements IBLEDevice {
     if (this.connecting) return this.connecting;
     const { addressType } = this.advertisement;
     this.connecting = (async () => {
-      await this.connection.connectBluetoothDeviceService(this.address, addressType);
-      this.connected = true;
-      if (this.paired) await this.pair();
+      try {
+        const { connected, error } = await this.withTimeout(
+          'connect',
+          this.connection.connectBluetoothDeviceService(this.address, addressType),
+          CONNECT_TIMEOUT_MS
+        );
+        if (!connected || error) {
+          throw new Error(`Connect failed with error ${error ?? 'unknown'}`);
+        }
+        this.connected = true;
+        if (this.paired) await this.pair();
+      } catch (error) {
+        this.connected = false;
+        this.servicesList = undefined;
+        this.serviceCache = {};
+        logWarn(`[BLE] Failed to connect to device: ${this.name}`, error);
+        try {
+          await this.disconnect();
+        } catch {}
+        throw error;
+      }
     })();
     try {
       await this.connecting;
@@ -86,11 +123,32 @@ export class BLEDevice implements IBLEDevice {
 
   disconnect = async () => {
     this.connected = false;
-    await this.connection.disconnectBluetoothDeviceService(this.address);
+    this.servicesList = undefined;
+    this.serviceCache = {};
+    if (this.disconnecting) return this.disconnecting;
+    this.disconnecting = (async () => {
+      try {
+        await this.withTimeout(
+          'disconnect',
+          this.connection.disconnectBluetoothDeviceService(this.address),
+          DISCONNECT_TIMEOUT_MS
+        );
+      } catch (error) {
+        logWarn(`[BLE] Failed to disconnect device: ${this.name}`, error);
+      } finally {
+        this.disconnecting = undefined;
+      }
+    })();
+    return this.disconnecting;
   };
 
   writeCharacteristic = async (handle: number, bytes: Uint8Array, response = true) => {
-    await this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response);
+    if (!this.connected) throw new Error('Write requested while disconnected');
+    await this.withTimeout(
+      'write characteristic',
+      this.connection.writeBluetoothGATTCharacteristicService(this.address, handle, bytes, response),
+      WRITE_TIMEOUT_MS
+    );
   };
 
   getServices = async () => {
@@ -147,11 +205,25 @@ export class BLEDevice implements IBLEDevice {
       if (message.address != this.address || message.handle != handle) return;
       notify(new Uint8Array([...Buffer.from(message.data, 'base64')]));
     });
-    await this.connection.notifyBluetoothGATTCharacteristicService(this.address, handle);
+    try {
+      if (!this.connected) await this.connect();
+      await this.withTimeout(
+        'notify characteristic',
+        this.connection.notifyBluetoothGATTCharacteristicService(this.address, handle),
+        NOTIFY_TIMEOUT_MS
+      );
+    } catch (error) {
+      logWarn(`[BLE] Failed to subscribe to characteristic for device: ${this.name}`, error);
+    }
   };
 
   readCharacteristic = async (handle: number) => {
-    const response = await this.connection.readBluetoothGATTCharacteristicService(this.address, handle);
+    if (!this.connected) throw new Error('Read requested while disconnected');
+    const response = await this.withTimeout(
+      'read characteristic',
+      this.connection.readBluetoothGATTCharacteristicService(this.address, handle),
+      READ_TIMEOUT_MS
+    );
     return new Uint8Array([...Buffer.from(response.data, 'base64')]);
   };
 
@@ -201,4 +273,18 @@ export class BLEDevice implements IBLEDevice {
       this.serviceCache = {};
     }
   };
+
+  private async withTimeout<T>(operation: string, promise: Promise<T>, timeoutMs: number): Promise<T> {
+    let timeout: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        reject(new Error(`[BLE] ${operation} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
 }

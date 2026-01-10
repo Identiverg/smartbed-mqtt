@@ -33,7 +33,12 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
     const { variant, motorPulseCount, motorPulseDelayMs, ...deviceConfig } = device;
 
     const deviceData = buildMQTTDeviceData({ ...deviceConfig, address }, 'Keeson');
-    await connect();
+    try {
+      await connect();
+    } catch (error) {
+      logWarn('[Keeson] Failed to connect to device:', name, error);
+      continue;
+    }
 
     const tryBuild = async (label: string, builder: typeof ksbtControllerBuilder) => {
       const controller = await builder(deviceData, bleDevice);

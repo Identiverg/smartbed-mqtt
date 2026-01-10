@@ -41,7 +41,12 @@ export const leggettplatt = async (mqtt: IMQTTConnection, esphome: IESPConnectio
 
     const device = devicesMap[mac] || devicesMap[name.toLowerCase()];
     const deviceData = buildMQTTDeviceData({ ...device, address }, 'LeggettPlatt');
-    await connect();
+    try {
+      await connect();
+    } catch (error) {
+      logWarn('[LeggettPlatt] Failed to connect to device:', name, error);
+      continue;
+    }
 
     const controller = await controllerBuilder(mqtt, deviceData, bleDevice);
     if (!controller) {

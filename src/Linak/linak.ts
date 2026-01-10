@@ -1,7 +1,7 @@
 import { IMQTTConnection } from '@mqtt/IMQTTConnection';
 import { Dictionary } from '@utils/Dictionary';
 import { buildDictionary } from '@utils/buildDictionary';
-import { logError, logInfo } from '@utils/logger';
+import { logError, logInfo, logWarn } from '@utils/logger';
 import { BLEController } from 'BLE/BLEController';
 import { setupDeviceInfoSensor } from 'BLE/setupDeviceInfoSensor';
 import { buildEntityConfig } from 'Common/buildEntityConfig';
@@ -26,7 +26,12 @@ export const linak = async (mqtt: IMQTTConnection, esphome: IESPConnection) => {
     const { name, mac, address, connect, disconnect, getCharacteristic } = bleDevice;
     const { hasMassage, ...device } = devicesMap[mac] || devicesMap[name.toLowerCase()];
     const deviceData = buildMQTTDeviceData({ ...device, address }, 'Linak');
-    await connect();
+    try {
+      await connect();
+    } catch (error) {
+      logWarn('[Linak] Failed to connect to device:', name, error);
+      continue;
+    }
 
     const characteristic = await getCharacteristic(
       '99fa0001-338a-1024-8a49-009c0215f78a',

@@ -1,6 +1,6 @@
 import { IMQTTConnection } from '@mqtt/IMQTTConnection';
 import { buildDictionary } from '@utils/buildDictionary';
-import { logError, logInfo } from '@utils/logger';
+import { logError, logInfo, logWarn } from '@utils/logger';
 import { BLEController } from 'BLE/BLEController';
 import { setupDeviceInfoSensor } from 'BLE/setupDeviceInfoSensor';
 import { buildMQTTDeviceData } from 'Common/buildMQTTDeviceData';
@@ -22,7 +22,12 @@ export const motosleep = async (mqtt: IMQTTConnection, esphome: IESPConnection) 
     const { name, mac, address, connect, disconnect, getCharacteristic } = bleDevice;
     const device = devicesMap[mac] || devicesMap[name.toLowerCase()];
     const deviceData = buildMQTTDeviceData({ ...device, address }, 'MotoSleep');
-    await connect();
+    try {
+      await connect();
+    } catch (error) {
+      logWarn('[MotoSleep] Failed to connect to device:', name, error);
+      continue;
+    }
 
     const characteristic = await getCharacteristic(
       '0000ffe0-0000-1000-8000-00805f9b34fb',

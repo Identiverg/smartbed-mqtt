@@ -83,7 +83,12 @@ export const richmat = async (mqtt: IMQTTConnection, esphome: IESPConnection) =>
     logInfo('[Richmat] Using command protocol for device:', name, commandProtocol);
 
     const deviceData = buildMQTTDeviceData({ ...device, address }, 'Richmat');
-    await connect();
+    try {
+      await connect();
+    } catch (error) {
+      logWarn('[Richmat] Failed to connect to device:', name, error);
+      continue;
+    }
 
     const controller = await controllerBuilder(deviceData, bleDevice, commandBuilder);
     if (!controller) {
