@@ -1,5 +1,7 @@
 import { Connection } from '@2colors/esphome-native-api';
-import { logError, logInfo } from '@utils/logger';
+import type { ConnectionConfig } from '@2colors/esphome-native-api';
+import { logError, logInfo, logWarn } from '@utils/logger';
+import { wait } from '@utils/wait';
 
 export const connect = (connection: Connection) => {
   return new Promise<Connection>((resolve, reject) => {
@@ -35,4 +37,23 @@ export const connect = (connection: Connection) => {
     };
     doConnect(retryHandler);
   });
+};
+
+export const connectWithRetry = async (config: ConnectionConfig) => {
+  let delayMs = 1_000;
+  const maxDelayMs = 30_000;
+  const port = config.port ?? 6053;
+  while (true) {
+    const connection = new Connection(config);
+    try {
+      return await connect(connection);
+    } catch (error) {
+      logWarn(`[ESPHome] Connect failed, retrying in ${delayMs}ms: ${config.host}:${port}`);
+      try {
+        connection.disconnect();
+      } catch {}
+      await wait(delayMs);
+      delayMs = Math.min(delayMs * 2, maxDelayMs);
+    }
+  }
 };

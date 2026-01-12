@@ -25,20 +25,36 @@ const normalizeUuid = (uuid: string) => {
   return normalized;
 };
 
+type ConnectionWithRegistry = Connection & {
+  __bleDeviceRegistry?: Map<number, (connected: boolean) => void>;
+  __bleDeviceRegistryListener?: (message: { address: number; connected: boolean; error?: number }) => void;
+  __bleRegistryDisconnectedListener?: () => void;
+  __bleActiveAddress?: number;
+  __bleConnectLock?: Promise<void>;
+};
+
 const getConnectionRegistry = (connection: Connection) => {
-  const connectionWithRegistry = connection as Connection & {
-    __bleDeviceRegistry?: Map<number, (connected: boolean) => void>;
-    __bleDeviceRegistryListener?: (message: { address: number; connected: boolean }) => void;
-  };
+  const connectionWithRegistry = connection as ConnectionWithRegistry;
   if (!connectionWithRegistry.__bleDeviceRegistry) {
     connectionWithRegistry.__bleDeviceRegistry = new Map();
   }
   if (!connectionWithRegistry.__bleDeviceRegistryListener) {
     connectionWithRegistry.__bleDeviceRegistryListener = ({ address, connected }) => {
+      if (connected) {
+        connectionWithRegistry.__bleActiveAddress = address;
+      } else if (connectionWithRegistry.__bleActiveAddress === address) {
+        connectionWithRegistry.__bleActiveAddress = undefined;
+      }
       const handler = connectionWithRegistry.__bleDeviceRegistry?.get(address);
       if (handler) handler(connected);
     };
     connection.on('message.BluetoothDeviceConnectionResponse', connectionWithRegistry.__bleDeviceRegistryListener);
+  }
+  if (!connectionWithRegistry.__bleRegistryDisconnectedListener) {
+    connectionWithRegistry.__bleRegistryDisconnectedListener = () => {
+      connectionWithRegistry.__bleActiveAddress = undefined;
+    };
+    connection.on('disconnected', connectionWithRegistry.__bleRegistryDisconnectedListener);
   }
   return connectionWithRegistry.__bleDeviceRegistry;
 };
@@ -92,16 +108,25 @@ export class BLEDevice implements IBLEDevice {
     if (this.connected) return;
     if (this.connecting) return this.connecting;
     const { addressType } = this.advertisement;
-    this.connecting = (async () => {
+    this.connecting = this.withConnectionLock(async () => {
       try {
         await this.ensureProxyConnected();
-        const { connected, error } = await this.withTimeout(
+        await this.disconnectActiveConnection();
+        let response = await this.withTimeout(
           'connect',
           this.connection.connectBluetoothDeviceService(this.address, addressType),
           CONNECT_TIMEOUT_MS
         );
-        if (!connected || error) {
-          throw new Error(`Connect failed with error ${error ?? 'unknown'}`);
+        if ((!response.connected || response.error) && response.error === 0 && !response.connected) {
+          await wait(300);
+          response = await this.withTimeout(
+            'connect retry',
+            this.connection.connectBluetoothDeviceService(this.address, addressType),
+            CONNECT_TIMEOUT_MS
+          );
+        }
+        if (!response.connected || response.error) {
+          throw new Error(`Connect failed with error ${response.error ?? 'unknown'}`);
         }
         this.connected = true;
         if (this.paired) await this.pair();
@@ -115,7 +140,7 @@ export class BLEDevice implements IBLEDevice {
         } catch {}
         throw error;
       }
-    })();
+    });
     try {
       await this.connecting;
     } finally {
@@ -130,9 +155,11 @@ export class BLEDevice implements IBLEDevice {
     this.serviceCache = {};
     if (this.disconnecting) return this.disconnecting;
     if (!wasConnected) return;
-    if (!this.connection.connected || !this.connection.authorized) return;
-    this.disconnecting = (async () => {
+    this.disconnecting = this.withConnectionLock(async () => {
       try {
+        if (!this.connection.connected || !this.connection.authorized) return;
+        const activeAddress = this.getActiveAddress();
+        if (activeAddress !== undefined && activeAddress !== this.address) return;
         await this.withTimeout(
           'disconnect',
           this.connection.disconnectBluetoothDeviceService(this.address),
@@ -143,7 +170,7 @@ export class BLEDevice implements IBLEDevice {
       } finally {
         this.disconnecting = undefined;
       }
-    })();
+    });
     return this.disconnecting;
   };
 
@@ -290,6 +317,51 @@ export class BLEDevice implements IBLEDevice {
       return await Promise.race([promise, timeoutPromise]);
     } finally {
       if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  private getConnectionWithRegistry(): ConnectionWithRegistry {
+    return this.connection as ConnectionWithRegistry;
+  }
+
+  private getActiveAddress(): number | undefined {
+    return this.getConnectionWithRegistry().__bleActiveAddress;
+  }
+
+  private async disconnectActiveConnection(): Promise<void> {
+    const connectionWithRegistry = this.getConnectionWithRegistry();
+    const activeAddress = connectionWithRegistry.__bleActiveAddress;
+    if (activeAddress === undefined || activeAddress === this.address) return;
+
+    try {
+      await this.withTimeout(
+        'disconnect active device',
+        this.connection.disconnectBluetoothDeviceService(activeAddress),
+        DISCONNECT_TIMEOUT_MS
+      );
+    } catch (error) {
+      logWarn('[BLE] Failed to disconnect active device before connect', error);
+    } finally {
+      if (connectionWithRegistry.__bleActiveAddress === activeAddress) {
+        connectionWithRegistry.__bleActiveAddress = undefined;
+      }
+    }
+    await wait(200);
+  }
+
+  private async withConnectionLock<T>(operation: () => Promise<T>): Promise<T> {
+    const connectionWithRegistry = this.getConnectionWithRegistry();
+    const previous = connectionWithRegistry.__bleConnectLock || Promise.resolve();
+    let release: () => void = () => {};
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    connectionWithRegistry.__bleConnectLock = previous.catch(() => {}).then(() => current);
+    await previous.catch(() => {});
+    try {
+      return await operation();
+    } finally {
+      release();
     }
   }
 

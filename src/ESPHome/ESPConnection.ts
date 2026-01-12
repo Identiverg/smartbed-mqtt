@@ -3,7 +3,7 @@ import type { EntityList, ListEntitiesButtonResponse } from '@2colors/esphome-na
 import { Deferred } from '@utils/deferred';
 import { logInfo, logWarn } from '@utils/logger';
 import { IESPConnection } from './IESPConnection';
-import { connect } from './connect';
+import { connectWithRetry } from './connect';
 import { BLEProxy } from './options';
 import { BLEAdvertisement } from './types/BLEAdvertisement';
 import { BLEDevice } from './types/BLEDevice';
@@ -26,7 +26,7 @@ export class ESPConnection implements IESPConnection {
           encryptionKey: (connection as any).encryptionKey,
           expectedServerName: (connection as any).expectedServerName,
         }));
-    this.connections = await Promise.all(configs.map((config) => connect(new Connection(config))));
+    this.connections = await Promise.all(configs.map((config) => connectWithRetry(config)));
   }
 
   async rebootProxy(host: string, port?: number): Promise<void> {

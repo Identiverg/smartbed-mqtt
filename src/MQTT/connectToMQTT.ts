@@ -8,14 +8,13 @@ export const connectToMQTT = (): Promise<IMQTTConnection> => {
   logInfo('[MQTT] Connecting...');
   const client = mqtt.connect(MQTTConfig);
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     client.once('connect', () => {
       logInfo('[MQTT] Connected');
       resolve(new MQTTConnection(client));
     });
-    client.once('error', (error) => {
+    client.on('error', (error) => {
       logError('[MQTT] Connect Error', error);
-      reject(error);
     });
   });
 };
