@@ -3,6 +3,14 @@ import type { ConnectionConfig } from '@2colors/esphome-native-api';
 import { logError, logInfo, logWarn } from '@utils/logger';
 import { wait } from '@utils/wait';
 
+const attachConnectionErrorLogging = (connection: Connection) => {
+  const port = connection.port ?? 6053;
+  const label = `${connection.host}:${port}`;
+  connection.on('error', (error) => {
+    logWarn(`[ESPHome] Connection error (${label})`, error);
+  });
+};
+
 export const connect = (connection: Connection) => {
   return new Promise<Connection>((resolve, reject) => {
     const errorHandler = (error: any) => {
@@ -46,7 +54,9 @@ export const connectWithRetry = async (config: ConnectionConfig) => {
   while (true) {
     const connection = new Connection(config);
     try {
-      return await connect(connection);
+      const connected = await connect(connection);
+      attachConnectionErrorLogging(connected);
+      return connected;
     } catch (error) {
       logWarn(`[ESPHome] Connect failed, retrying in ${delayMs}ms: ${config.host}:${port}`);
       try {
