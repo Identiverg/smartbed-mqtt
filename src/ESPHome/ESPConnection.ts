@@ -1,5 +1,5 @@
 import { Connection } from '@2colors/esphome-native-api';
-import type { EntityList, ListEntitiesButtonResponse } from '@2colors/esphome-native-api';
+import type { ConnectionConfig, EntityList, ListEntitiesButtonResponse } from '@2colors/esphome-native-api';
 import { Deferred } from '@utils/deferred';
 import { logInfo, logWarn } from '@utils/logger';
 import { IESPConnection } from './IESPConnection';
@@ -11,10 +11,16 @@ import { IBLEDevice } from './types/IBLEDevice';
 
 export class ESPConnection implements IESPConnection {
   private restartButtonKeys = new Map<string, number>();
+  private bleDevices = new Set<BLEDevice>();
+  private connectionRefreshes = new Map<string, Promise<void>>();
+  private intentionalDisconnects = new Set<Connection>();
 
-  constructor(private connections: Connection[], private proxies: BLEProxy[] = []) {}
+  constructor(private connections: Connection[], private proxies: BLEProxy[] = []) {
+    this.connections.forEach((connection) => this.attachConnectionHandlers(connection));
+  }
 
   async reconnect(): Promise<void> {
+    const previousConnections = this.connections;
     this.disconnect();
     logInfo('[ESPHome] Reconnecting...');
     const configs = this.proxies.length
@@ -27,6 +33,16 @@ export class ESPConnection implements IESPConnection {
           expectedServerName: (connection as any).expectedServerName,
         }));
     this.connections = await Promise.all(configs.map((config) => connectWithRetry(config)));
+    this.connections.forEach((connection) => this.attachConnectionHandlers(connection));
+    const connectionByKey = new Map(
+      this.connections.map((connection) => [this.getProxyKey(connection.host, connection.port), connection])
+    );
+    for (const device of this.bleDevices) {
+      const previous = previousConnections.find((connection) => device.usesConnection(connection));
+      if (!previous) continue;
+      const next = connectionByKey.get(this.getProxyKey(previous.host, previous.port));
+      if (next) device.updateConnection(next);
+    }
   }
 
   async rebootProxy(host: string, port?: number): Promise<void> {
@@ -43,7 +59,7 @@ export class ESPConnection implements IESPConnection {
       return;
     }
 
-    const tempConnection = new Connection(proxyConfig);
+    const tempConnection = new Connection({ ...proxyConfig, reconnect: false });
     try {
       const tempResult = await this.tryRebootWithConnection(host, normalizedPort, tempConnection, true);
       if (!tempResult) logWarn(`[ESPHome] Failed to reboot proxy: ${host}`);
@@ -56,6 +72,7 @@ export class ESPConnection implements IESPConnection {
     logInfo('[ESPHome] Disconnecting...');
 
     for (const connection of this.connections) {
+      this.intentionalDisconnects.add(connection);
       connection.disconnect();
       connection.connected = false;
     }
@@ -102,7 +119,9 @@ export class ESPConnection implements IESPConnection {
         seenAddresses.push(address);
 
         if (nameMapper) name = nameMapper(name);
-        onNewDeviceFound(new BLEDevice(name, advertisement, connection));
+        const device = new BLEDevice(name, advertisement, connection);
+        this.registerBLEDevice(device);
+        onNewDeviceFound(device);
       },
     });
     const listeners = this.connections.map(listenerBuilder);
@@ -207,6 +226,94 @@ export class ESPConnection implements IESPConnection {
     return this.proxies.find(
       (proxy) => proxy.host === host && this.normalizePort(proxy.port) === port
     );
+  }
+
+  private registerBLEDevice(device: BLEDevice) {
+    this.bleDevices.add(device);
+  }
+
+  private attachConnectionHandlers(connection: Connection) {
+    const key = this.getProxyKey(connection.host, connection.port);
+    connection.on('error', (error) => {
+      logWarn(`[ESPHome] Connection error (${key})`, error);
+      this.scheduleConnectionRefresh(connection, 'error');
+    });
+    connection.on('disconnected', () => {
+      logWarn(`[ESPHome] Connection disconnected (${key})`);
+      this.scheduleConnectionRefresh(connection, 'disconnected');
+    });
+  }
+
+  private scheduleConnectionRefresh(connection: Connection, reason: string) {
+    if (this.intentionalDisconnects.has(connection)) {
+      this.intentionalDisconnects.delete(connection);
+      return;
+    }
+    if (!this.connections.includes(connection)) return;
+    const key = this.getProxyKey(connection.host, connection.port);
+    if (this.connectionRefreshes.has(key)) return;
+    const refresh = this.refreshConnection(connection, reason)
+      .catch((error) => {
+        logWarn(`[ESPHome] Connection refresh failed (${key})`, error);
+      })
+      .finally(() => {
+        if (this.connectionRefreshes.get(key) === refresh) {
+          this.connectionRefreshes.delete(key);
+        }
+      });
+    this.connectionRefreshes.set(key, refresh);
+  }
+
+  private async refreshConnection(connection: Connection, reason: string) {
+    const key = this.getProxyKey(connection.host, connection.port);
+    logWarn(`[ESPHome] Refreshing connection (${key}) due to ${reason}`);
+    const config = this.buildConnectionConfig(connection);
+    const newConnection = await connectWithRetry(config);
+    this.replaceConnection(connection, newConnection);
+  }
+
+  private buildConnectionConfig(connection: Connection): ConnectionConfig {
+    const normalizedPort = this.normalizePort(connection.port);
+    const proxyConfig = this.getProxyConfig(connection.host, normalizedPort);
+    if (proxyConfig) {
+      return {
+        ...proxyConfig,
+        port: normalizedPort,
+      };
+    }
+    return {
+      host: connection.host,
+      port: normalizedPort,
+      password: connection.password,
+      encryptionKey: (connection as any).encryptionKey,
+      expectedServerName: (connection as any).expectedServerName,
+      clientInfo: connection.clientInfo,
+      reconnectInterval: connection.reconnectInterval,
+      pingInterval: connection.pingInterval,
+      pingAttempts: connection.pingAttempts,
+    };
+  }
+
+  private replaceConnection(previous: Connection, next: Connection) {
+    const key = this.getProxyKey(previous.host, previous.port);
+    const index = this.connections.findIndex(
+      (connection) => this.getProxyKey(connection.host, connection.port) === key
+    );
+    if (index >= 0) {
+      this.connections[index] = next;
+    } else {
+      this.connections.push(next);
+    }
+    this.attachConnectionHandlers(next);
+
+    for (const device of this.bleDevices) {
+      if (device.usesConnection(previous)) device.updateConnection(next);
+    }
+
+    try {
+      this.intentionalDisconnects.add(previous);
+      previous.disconnect();
+    } catch {}
   }
 
   private getProxyKey(host: string, port?: number): string {

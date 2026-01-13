@@ -90,6 +90,24 @@ export class BLEDevice implements IBLEDevice {
     registry.set(this.address, this.connectionResponseHandler);
   }
 
+  usesConnection = (connection: Connection) => this.connection === connection;
+
+  updateConnection = (connection: Connection) => {
+    if (this.connection === connection) return;
+    try {
+      const registry = getConnectionRegistry(this.connection);
+      registry.delete(this.address);
+    } catch {}
+    this.connection = connection;
+    const registry = getConnectionRegistry(this.connection);
+    registry.set(this.address, this.connectionResponseHandler);
+    this.connected = false;
+    this.connecting = undefined;
+    this.disconnecting = undefined;
+    this.servicesList = undefined;
+    this.serviceCache = {};
+  };
+
   pair = async () => {
     try {
       const { paired, error } = await this.withTimeout(
@@ -150,6 +168,7 @@ export class BLEDevice implements IBLEDevice {
             error = retryError;
           }
         }
+        this.maybeFlagConnectionError(error);
         logWarn(`[BLE] Failed to connect to device: ${this.name}`, error);
         try {
           await this.disconnect();
@@ -495,5 +514,24 @@ export class BLEDevice implements IBLEDevice {
       registry.delete(previousAddress);
       registry.set(advertisement.address, this.connectionResponseHandler);
     }
+  }
+
+  private maybeFlagConnectionError(error: unknown) {
+    if (!error) return;
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+    const triggers = [
+      'bluetoothdeviceconnectionresponse',
+      'helloresponse',
+      'write after end',
+      'not connected',
+      'not authorized',
+      'econnreset',
+    ];
+    if (!triggers.some((trigger) => normalized.includes(trigger))) return;
+    if (this.connection.listenerCount('error') === 0) return;
+    try {
+      this.connection.emit('error', error);
+    } catch {}
   }
 }
