@@ -10,6 +10,7 @@ const BT_BASE_UUID_SUFFIX = '0000-1000-8000-00805f9b34fb';
 const CONNECT_TIMEOUT_MS = 15_000;
 const DISCONNECT_TIMEOUT_MS = 10_000;
 const PAIR_TIMEOUT_MS = 15_000;
+const ADVERTISEMENT_REFRESH_TIMEOUT_MS = 10_000;
 const WRITE_TIMEOUT_MS = 8_000;
 const READ_TIMEOUT_MS = 8_000;
 const NOTIFY_TIMEOUT_MS = 8_000;
@@ -64,6 +65,8 @@ export class BLEDevice implements IBLEDevice {
   private paired = false;
   private connecting?: Promise<void>;
   private disconnecting?: Promise<void>;
+  private advertisementRefresh?: Promise<boolean>;
+  private connectionResponseHandler = (connected: boolean) => this.handleConnectionResponse(connected);
 
   private servicesList?: BluetoothGATTService[];
   private serviceCache: Dictionary<BluetoothGATTService | null> = {};
@@ -84,7 +87,7 @@ export class BLEDevice implements IBLEDevice {
   constructor(public name: string, public advertisement: BLEAdvertisement, private connection: Connection) {
     this.mac = this.address.toString(16).padStart(12, '0');
     const registry = getConnectionRegistry(this.connection);
-    registry.set(this.address, (connected) => this.handleConnectionResponse(connected));
+    registry.set(this.address, this.connectionResponseHandler);
   }
 
   pair = async () => {
@@ -107,9 +110,9 @@ export class BLEDevice implements IBLEDevice {
   connect = async () => {
     if (this.connected) return;
     if (this.connecting) return this.connecting;
-    const { addressType } = this.advertisement;
     this.connecting = this.withConnectionLock(async () => {
-      try {
+      const connectOnce = async () => {
+        const { addressType } = this.advertisement;
         await this.ensureProxyConnected();
         await this.disconnectActiveConnection();
         let response = await this.withTimeout(
@@ -130,10 +133,23 @@ export class BLEDevice implements IBLEDevice {
         }
         this.connected = true;
         if (this.paired) await this.pair();
+      };
+
+      try {
+        await connectOnce();
       } catch (error) {
         this.connected = false;
         this.servicesList = undefined;
         this.serviceCache = {};
+        const refreshed = await this.tryRefreshAdvertisement(error);
+        if (refreshed) {
+          try {
+            await connectOnce();
+            return;
+          } catch (retryError) {
+            error = retryError;
+          }
+        }
         logWarn(`[BLE] Failed to connect to device: ${this.name}`, error);
         try {
           await this.disconnect();
@@ -400,5 +416,84 @@ export class BLEDevice implements IBLEDevice {
         }
       }
     });
+  }
+
+  private async tryRefreshAdvertisement(error: unknown): Promise<boolean> {
+    if (!this.shouldRefreshAdvertisement(error)) return false;
+    const deviceLabel = this.name || this.advertisement?.name || this.mac;
+    logInfo(`[BLE] Refreshing advertisement for device: ${deviceLabel}`);
+    try {
+      const refreshed = await this.refreshAdvertisement();
+      if (!refreshed) {
+        logWarn(`[BLE] Advertisement refresh timed out for device: ${deviceLabel}`);
+      }
+      return refreshed;
+    } catch (refreshError) {
+      logWarn(`[BLE] Advertisement refresh failed for device: ${deviceLabel}`, refreshError);
+      return false;
+    }
+  }
+
+  private shouldRefreshAdvertisement(error: unknown): boolean {
+    if (!error) return false;
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+    if (normalized.includes('not authorized') || normalized.includes('not connected')) return false;
+    return normalized.includes('timeout') || normalized.includes('timed out') || normalized.includes('bluetoothdeviceconnectionresponse');
+  }
+
+  private async refreshAdvertisement(
+    timeoutMs: number = ADVERTISEMENT_REFRESH_TIMEOUT_MS
+  ): Promise<boolean> {
+    const targetName = (this.advertisement?.name || '').toLowerCase();
+    if (!targetName) return false;
+    if (this.advertisementRefresh) return this.advertisementRefresh;
+
+    try {
+      await this.ensureProxyConnected();
+    } catch {
+      return false;
+    }
+
+    this.advertisementRefresh = new Promise<boolean>((resolve) => {
+      let timeout: NodeJS.Timeout | undefined;
+      const onAdvertisement = (advertisement: BLEAdvertisement) => {
+        if (!advertisement?.name) return;
+        if (advertisement.name.toLowerCase() !== targetName) return;
+        cleanup();
+        this.updateAdvertisement(advertisement);
+        resolve(true);
+      };
+      const cleanup = () => {
+        this.connection.off('message.BluetoothLEAdvertisementResponse', onAdvertisement);
+        if (timeout) clearTimeout(timeout);
+      };
+
+      this.connection.on('message.BluetoothLEAdvertisementResponse', onAdvertisement);
+      try {
+        this.connection.subscribeBluetoothAdvertisementService();
+      } catch {}
+      timeout = setTimeout(() => {
+        cleanup();
+        resolve(false);
+      }, timeoutMs);
+    });
+
+    try {
+      return await this.advertisementRefresh;
+    } finally {
+      this.advertisementRefresh = undefined;
+    }
+  }
+
+  private updateAdvertisement(advertisement: BLEAdvertisement) {
+    const registry = getConnectionRegistry(this.connection);
+    const previousAddress = this.address;
+    this.advertisement = advertisement;
+    this.mac = advertisement.address.toString(16).padStart(12, '0');
+    if (previousAddress !== advertisement.address) {
+      registry.delete(previousAddress);
+      registry.set(advertisement.address, this.connectionResponseHandler);
+    }
   }
 }
