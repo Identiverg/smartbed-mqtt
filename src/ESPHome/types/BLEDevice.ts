@@ -8,6 +8,7 @@ import { IBLEDevice } from './IBLEDevice';
 
 const BT_BASE_UUID_SUFFIX = '0000-1000-8000-00805f9b34fb';
 const CONNECT_TIMEOUT_MS = 15_000;
+const CONNECT_RETRY_DELAY_MS = 2_000;
 const DISCONNECT_TIMEOUT_MS = 10_000;
 const PAIR_TIMEOUT_MS = 15_000;
 const ADVERTISEMENT_REFRESH_TIMEOUT_MS = 10_000;
@@ -153,27 +154,37 @@ export class BLEDevice implements IBLEDevice {
         if (this.paired) await this.pair();
       };
 
-      try {
-        await connectOnce();
-      } catch (error) {
-        this.connected = false;
-        this.servicesList = undefined;
-        this.serviceCache = {};
-        const refreshed = await this.tryRefreshAdvertisement(error);
-        if (refreshed) {
-          try {
-            await connectOnce();
-            return;
-          } catch (retryError) {
-            error = retryError;
-          }
-        }
-        this.maybeFlagConnectionError(error);
-        logWarn(`[BLE] Failed to connect to device: ${this.name}`, error);
+      const maxAttempts = 2;
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-          await this.disconnect();
-        } catch {}
-        throw error;
+          await connectOnce();
+          return;
+        } catch (error) {
+          lastError = error;
+          this.connected = false;
+          this.servicesList = undefined;
+          this.serviceCache = {};
+          const refreshed = await this.tryRefreshAdvertisement(error);
+          if (refreshed) {
+            try {
+              await connectOnce();
+              return;
+            } catch (retryError) {
+              lastError = retryError;
+            }
+          }
+          this.maybeFlagConnectionError(lastError);
+          if (attempt < maxAttempts && this.shouldRetryConnect(lastError)) {
+            await wait(CONNECT_RETRY_DELAY_MS);
+            continue;
+          }
+          logWarn(`[BLE] Failed to connect to device: ${this.name}`, lastError);
+          try {
+            await this.disconnect();
+          } catch {}
+          throw lastError;
+        }
       }
     });
     try {
@@ -459,6 +470,23 @@ export class BLEDevice implements IBLEDevice {
     const normalized = message.toLowerCase();
     if (normalized.includes('not authorized') || normalized.includes('not connected')) return false;
     return normalized.includes('timeout') || normalized.includes('timed out') || normalized.includes('bluetoothdeviceconnectionresponse');
+  }
+
+  private shouldRetryConnect(error: unknown): boolean {
+    if (!error) return false;
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+    const triggers = [
+      'bluetoothdeviceconnectionresponse',
+      'timeout',
+      'timed out',
+      'helloresponse',
+      'write after end',
+      'not connected',
+      'not authorized',
+      'econnreset',
+    ];
+    return triggers.some((trigger) => normalized.includes(trigger));
   }
 
   private async refreshAdvertisement(

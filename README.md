@@ -46,6 +46,8 @@ An MQTT broker is required. The [Mosquitto official Add-On](https://github.com/h
 
 For BLE controlled beds a dedicated ESP32 running ESPHome's bluetooth proxy is required. Due to limitations in ESPHome, specifically since 2023.7 only one connection can use the bluetooth proxy of an ESP32 at a time, the BLE proxy will need to not be added (or disabled if already added) to HomeAssistant. Use the [ESPHome Ready-Made Projects](https://esphome.io/projects/?type=bluetooth) page to create an ESPHome bluetooth proxy and join it to your network.
 
+If you see long idle drop-offs, you can enable automatic proxy recovery on repeated BLE connection timeouts with `bleProxyAutoRebootOnTimeout`. Use `bleProxyAutoRebootWindowMinutes` and `bleProxyAutoRebootCooldownMinutes` to control how often it will reboot the proxy.
+
 # Sleeptracker AI Support (Cloud)
 
 ## Configuration
@@ -292,7 +294,7 @@ Support for this was only possible due to assistance from david_nagy, corne & PT
 
 ## Configuring
 
-You must specify at least one bleProxy as demonstrated in the config defaults. You also need to supply at least one Keeson controller with `name` and `friendlyName`.
+You must specify at least one bleProxy as demonstrated in the config defaults. You also need to supply at least one Keeson controller with `name`, `friendlyName`, and optionally `stayConnected`.
 
 ## Current features include:
 
@@ -304,7 +306,7 @@ You must specify at least one bleProxy as demonstrated in the config defaults. Y
 
 ## Notes
 
-This remains connected to the bed controller and due to the bed only accepting one connection it will stop you from using the app to control the bed.
+Setting `stayConnected` to `true` will keep a connection open and can prevent idle drop-offs, but if the bed only accepts one Bluetooth connection it will stop you from using the app/remote.
 
 Initial prototyping was only possible due to assistance from [@alanbixby](https://github.com/alanbixby/) on Discord.
 

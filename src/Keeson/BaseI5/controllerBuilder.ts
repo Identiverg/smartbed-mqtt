@@ -14,7 +14,11 @@ const buildCommand = (command: number) => {
 };
 const disconnectDelayMs = 5_000;
 
-export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLEDevice) => {
+export const controllerBuilder = async (
+  deviceData: IDeviceData,
+  bleDevice: IBLEDevice,
+  stayConnected?: boolean
+) => {
   const { getCharacteristic } = bleDevice;
   const candidates = [
     {
@@ -55,7 +59,7 @@ export const controllerBuilder = async (deviceData: IDeviceData, bleDevice: IBLE
       writeCharacteristic.handle,
       buildCommand,
       {},
-      false,
+      stayConnected ?? false,
       requireResponse,
       disconnectDelayMs
     );

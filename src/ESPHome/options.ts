@@ -8,8 +8,17 @@ export interface BLEProxy {
   expectedServerName: string | undefined;
 }
 
+export interface BLEProxyRecoveryOptions {
+  autoRebootOnTimeout: boolean;
+  rebootWindowMinutes: number;
+  rebootCooldownMinutes: number;
+}
+
 interface OptionsJson {
   bleProxies: BLEProxy[];
+  bleProxyAutoRebootOnTimeout?: boolean;
+  bleProxyAutoRebootWindowMinutes?: number;
+  bleProxyAutoRebootCooldownMinutes?: number;
 }
 
 const options: OptionsJson = getRootOptions();
@@ -21,3 +30,9 @@ export const getProxies = () => {
   }
   return [];
 };
+
+export const getRecoveryOptions = (): BLEProxyRecoveryOptions => ({
+  autoRebootOnTimeout: options.bleProxyAutoRebootOnTimeout ?? false,
+  rebootWindowMinutes: Math.max(1, options.bleProxyAutoRebootWindowMinutes ?? 5),
+  rebootCooldownMinutes: Math.max(1, options.bleProxyAutoRebootCooldownMinutes ?? 30),
+});

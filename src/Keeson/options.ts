@@ -4,6 +4,7 @@ export interface KeesonDevice {
   friendlyName: string;
   name: string;
   variant?: 'auto' | 'base' | 'ksbt';
+  stayConnected?: boolean;
   motorPulseCount?: number;
   motorPulseDelayMs?: number;
 }

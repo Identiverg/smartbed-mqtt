@@ -30,7 +30,7 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
       logInfo(`[Keeson] Device not found in configuration for MAC: ${mac} or Name: ${name}`);
       continue;
     }
-    const { variant, motorPulseCount, motorPulseDelayMs, ...deviceConfig } = device;
+    const { variant, stayConnected, motorPulseCount, motorPulseDelayMs, ...deviceConfig } = device;
 
     const deviceData = buildMQTTDeviceData({ ...deviceConfig, address }, 'Keeson');
     try {
@@ -41,7 +41,7 @@ export const keeson = async (mqtt: IMQTTConnection, esphome: IESPConnection): Pr
     }
 
     const tryBuild = async (label: string, builder: typeof ksbtControllerBuilder) => {
-      const controller = await builder(deviceData, bleDevice);
+      const controller = await builder(deviceData, bleDevice, stayConnected);
       if (controller) logInfo('[Keeson] Using protocol for device:', name, label);
       return controller;
     };

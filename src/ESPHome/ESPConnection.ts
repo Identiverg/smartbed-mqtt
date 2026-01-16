@@ -4,7 +4,7 @@ import { Deferred } from '@utils/deferred';
 import { logInfo, logWarn } from '@utils/logger';
 import { IESPConnection } from './IESPConnection';
 import { connectWithRetry } from './connect';
-import { BLEProxy } from './options';
+import { BLEProxy, BLEProxyRecoveryOptions, getRecoveryOptions } from './options';
 import { BLEAdvertisement } from './types/BLEAdvertisement';
 import { BLEDevice } from './types/BLEDevice';
 import { IBLEDevice } from './types/IBLEDevice';
@@ -14,8 +14,16 @@ export class ESPConnection implements IESPConnection {
   private bleDevices = new Set<BLEDevice>();
   private connectionRefreshes = new Map<string, Promise<void>>();
   private intentionalDisconnects = new Set<Connection>();
+  private proxyTimeouts = new Map<string, number>();
+  private proxyReboots = new Map<string, number>();
+  private proxyRecovery: BLEProxyRecoveryOptions;
 
-  constructor(private connections: Connection[], private proxies: BLEProxy[] = []) {
+  constructor(
+    private connections: Connection[],
+    private proxies: BLEProxy[] = [],
+    recoveryOptions: BLEProxyRecoveryOptions = getRecoveryOptions()
+  ) {
+    this.proxyRecovery = recoveryOptions;
     this.connections.forEach((connection) => this.attachConnectionHandlers(connection));
   }
 
@@ -236,6 +244,7 @@ export class ESPConnection implements IESPConnection {
     const key = this.getProxyKey(connection.host, connection.port);
     connection.on('error', (error) => {
       logWarn(`[ESPHome] Connection error (${key})`, error);
+      this.maybeAutoRebootProxy(connection, error);
       this.scheduleConnectionRefresh(connection, 'error');
     });
     connection.on('disconnected', () => {
@@ -322,5 +331,36 @@ export class ESPConnection implements IESPConnection {
 
   private normalizePort(port?: number): number {
     return port ?? 6053;
+  }
+
+  private maybeAutoRebootProxy(connection: Connection, error: unknown) {
+    if (!this.proxyRecovery.autoRebootOnTimeout) return;
+    if (!this.isBleConnectTimeout(error)) return;
+    const key = this.getProxyKey(connection.host, connection.port);
+    const now = Date.now();
+    const lastTimeout = this.proxyTimeouts.get(key);
+    this.proxyTimeouts.set(key, now);
+
+    const cooldownMs = this.proxyRecovery.rebootCooldownMinutes * 60_000;
+    const windowMs = this.proxyRecovery.rebootWindowMinutes * 60_000;
+    const lastReboot = this.proxyReboots.get(key) ?? 0;
+    if (now - lastReboot < cooldownMs) return;
+    if (!lastTimeout || now - lastTimeout > windowMs) return;
+
+    this.proxyReboots.set(key, now);
+    this.proxyTimeouts.delete(key);
+    logWarn(`[ESPHome] Auto-rebooting proxy (${key}) after repeated BLE timeouts`);
+    void this.rebootProxy(connection.host, connection.port);
+  }
+
+  private isBleConnectTimeout(error: unknown): boolean {
+    if (!error) return false;
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes('bluetoothdeviceconnectionresponse') ||
+      normalized.includes('sendmessage timeout') ||
+      normalized.includes('timed out')
+    );
   }
 }
